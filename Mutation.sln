@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mutation.Halo", "Mutation.H
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mutation.HEK", "Mutation.HEK\Mutation.HEK.csproj", "{577D514C-8834-4741-B267-6C82E45FA558}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mutation.Test", "Mutation.Test\Mutation.Test.csproj", "{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -201,6 +203,22 @@ Global
 		{577D514C-8834-4741-B267-6C82E45FA558}.Release|Mixed Platforms.Build.0 = Release|Any CPU
 		{577D514C-8834-4741-B267-6C82E45FA558}.Release|x64.ActiveCfg = Release|Any CPU
 		{577D514C-8834-4741-B267-6C82E45FA558}.Release|x86.ActiveCfg = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|x64.Build.0 = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Debug|x86.Build.0 = Debug|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|Any CPU.Build.0 = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|Mixed Platforms.Build.0 = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|x64.ActiveCfg = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|x64.Build.0 = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|x86.ActiveCfg = Release|Any CPU
+		{96634D81-CFA7-49C6-BDA4-205E0CCA2E60}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

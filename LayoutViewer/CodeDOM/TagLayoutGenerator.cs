@@ -39,7 +39,7 @@ namespace LayoutViewer.CodeDOM
         public TagLayoutGenerator()
         {
             // Initialize the global code scope.
-            this.globalCodeScope = new MutationCodeScope(MutationCodeCreator.MutationTagsNamespace, "", -1, MutationCodeScopeType.GlobalNamespace);
+            this.globalCodeScope = new MutationCodeScope(MutationCodeCreator.MutationTagsNamespace, "", null, -1, MutationCodeScopeType.GlobalNamespace);
 
             // Cache all of the pre/post processing functions.
             CachePreProcessingFunctions();
@@ -72,24 +72,26 @@ namespace LayoutViewer.CodeDOM
             }
 
             // Build a list of references for each tag block definition we have.
-            Dictionary<string, List<TagBlockDefinition>> tagBlockReferences = PreProcessTagBlockDefinitions(reader);
-            Dictionary<string, List<TagBlockDefinition>> nonUniqueDefinitions = tagBlockReferences.Where(b => b.Value.Count > 1).ToDictionary(p => p.Key, p => p.Value);
+            Dictionary<int, List<TagBlockDefinition>> tagBlockReferences = PreProcessTagBlockDefinitions(reader);
+            Dictionary<int, List<TagBlockDefinition>> nonUniqueDefinitions = tagBlockReferences.Where(b => b.Value.Count > 1).ToDictionary(p => p.Key, p => p.Value);
 
             // Initialize our list of tag definitions to process with the tag groups from the guerilla reader.
-            //tag_group hlmt = reader.TagGroups.First(tag => tag.GroupTag.Equals("hlmt"));
             List<TagBlockDefinition> tagBlockDefinitions = new List<TagBlockDefinition>(reader.TagBlockDefinitions.Values.Where(block => block.IsTagGroup == true));
-            //tagBlockDefinitions.Add(reader.TagBlockDefinitions[hlmt.definition_address]);
 
             // Loop through all of the non-unique tag blocks and add them to the list of definitions to be processed.
             foreach (TagBlockDefinition definition in reader.TagBlockDefinitions.Values)
             {
                 // Check if the definition name is in the non-unique block list.
-                if (nonUniqueDefinitions.Keys.Contains(definition.s_tag_block_definition.Name) == true)
+                if (nonUniqueDefinitions.Keys.Contains(definition.s_tag_block_definition.address) == true)
                 {
                     // Add the definition to the list to be extracted.
                     tagBlockDefinitions.Add(definition);
                 }
             }
+
+            // Reverse all of the tag block definitions so when when fix the structure sizes we fix the struct sizes for the referenced
+            // tag_block's first and void having to deal with complex search algorithms to find them later on.
+            //tagBlockDefinitions.Reverse();
 
             // Pre-process any tag layouts that need fixups.
             for (int i = 0; i < this.preProcessingFunctions.Count; i++)
@@ -102,6 +104,9 @@ namespace LayoutViewer.CodeDOM
                 this.preProcessingFunctions.ElementAt(i).Value.Invoke(null, new object[] { tagBlock });
             }
 
+            // Create a global code creator which will act as the parent for all other child code creators.
+            MutationCodeCreator globalCodeCreator = new MutationCodeCreator();
+
             // Create a list of layout creators for all of the definitions we will be processing.
             List <MutationTagLayoutCreator> layoutCreators = new List<MutationTagLayoutCreator>();
 
@@ -110,7 +115,7 @@ namespace LayoutViewer.CodeDOM
             for (int i = 0; i < tagBlockDefinitions.Count; i++)
             {
                 // Create a new tag layout creator and have it create its code scope using the tag block definition.
-                MutationTagLayoutCreator layoutCreator = new MutationTagLayoutCreator(tagBlockDefinitions[i]);
+                MutationTagLayoutCreator layoutCreator = new MutationTagLayoutCreator(tagBlockDefinitions[i], globalCodeCreator);
                 layoutCreator.CreateCodeScope(this.globalCodeScope);
 
                 // Add the layout creator to the list.
@@ -130,6 +135,17 @@ namespace LayoutViewer.CodeDOM
                     this.postProcessingFunctions[layoutCreators[i].TagBlockDefinition.s_tag_block_definition.Name].Invoke(null,
                         new object[] { layoutCreators[i] } );
                 }
+            }
+
+            // Now that the layouts are post processed fix up any structure sizes and write them to file.
+            for (int i = 0; i < layoutCreators.Count; i++)
+            {
+                // Check if there is a post process function for this block, if so we need to fix the structure size since it could have changed.
+                if (this.postProcessingFunctions.Keys.Contains(layoutCreators[i].TagBlockDefinition.s_tag_block_definition.Name) == true)
+                {
+                    // If we changed the layout then recompute the definition size.
+                    layoutCreators[i].CodeCreator.FixStructureSize();
+                }
 
                 // Write it to file.
                 layoutCreators[i].WriteToFile(outputFolder);
@@ -138,10 +154,10 @@ namespace LayoutViewer.CodeDOM
 
         #region PreProcessing
 
-        private Dictionary<string, List<TagBlockDefinition>> PreProcessTagBlockDefinitions(GuerillaReader reader)
+        private Dictionary<int, List<TagBlockDefinition>> PreProcessTagBlockDefinitions(GuerillaReader reader)
         {
             // Create a new reference dictionary.
-            Dictionary<string, List<TagBlockDefinition>> references = new Dictionary<string, List<TagBlockDefinition>>();
+            Dictionary<int, List<TagBlockDefinition>> references = new Dictionary<int, List<TagBlockDefinition>>();
 
             // Loop through all of the tag block definitions and preprocess each one.
             for (int i = 0; i < reader.TagGroups.Length; i++)
@@ -157,7 +173,7 @@ namespace LayoutViewer.CodeDOM
             return references;
         }
 
-        private void PreProcessTagBlockDefinitions(TagBlockDefinition definition, GuerillaReader reader, Dictionary<string, List<TagBlockDefinition>> references)
+        private void PreProcessTagBlockDefinitions(TagBlockDefinition definition, GuerillaReader reader, Dictionary<int, List<TagBlockDefinition>> references)
         {
             // Loop through all of the fields and process each one.
             foreach (tag_field field in definition.TagFields[definition.TagFieldSetLatestIndex])
@@ -171,16 +187,16 @@ namespace LayoutViewer.CodeDOM
                             TagBlockDefinition def = reader.TagBlockDefinitions[field.definition_address];
 
                             // Format the name and check if it is already in the references dictionary.
-                            if (references.Keys.Contains(def.s_tag_block_definition.Name) == true)
+                            if (references.Keys.Contains(def.s_tag_block_definition.address) == true)
                             {
                                 // Increment the reference count.
-                                if (references[def.s_tag_block_definition.Name].Contains(definition) == false)
-                                    references[def.s_tag_block_definition.Name].Add(definition);
+                                if (references[def.s_tag_block_definition.address].Contains(definition) == false)
+                                    references[def.s_tag_block_definition.address].Add(definition);
                             }
                             else
                             {
                                 // Add the block name to the references dictionary.
-                                references.Add(def.s_tag_block_definition.Name, new List<TagBlockDefinition>(new TagBlockDefinition[] { definition }));
+                                references.Add(def.s_tag_block_definition.address, new List<TagBlockDefinition>(new TagBlockDefinition[] { definition }));
 
                                 // Preprocess the tag block definition.
                                 PreProcessTagBlockDefinitions(def, reader, references);
@@ -196,16 +212,16 @@ namespace LayoutViewer.CodeDOM
                             TagBlockDefinition def = reader.TagBlockDefinitions[tagStruct.block_definition_address];
 
                             // Format the name and check if it is already in the references dictionary.
-                            if (references.Keys.Contains(def.s_tag_block_definition.Name) == true)
+                            if (references.Keys.Contains(def.s_tag_block_definition.address) == true)
                             {
                                 // Increment the reference count.
-                                if (references[def.s_tag_block_definition.Name].Contains(definition) == false)
-                                    references[def.s_tag_block_definition.Name].Add(definition);
+                                if (references[def.s_tag_block_definition.address].Contains(definition) == false)
+                                    references[def.s_tag_block_definition.address].Add(definition);
                             }
                             else
                             {
                                 // Add the block name to the references dictionary.
-                                references.Add(def.s_tag_block_definition.Name, new List<TagBlockDefinition>(new TagBlockDefinition[] { definition }));
+                                references.Add(def.s_tag_block_definition.address, new List<TagBlockDefinition>(new TagBlockDefinition[] { definition }));
 
                                 // Preprocess the tag block definition.
                                 PreProcessTagBlockDefinitions(def, reader, references);

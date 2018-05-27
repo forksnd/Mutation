@@ -77,6 +77,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CodeDOM\GuerillaProcessingUtilities.cs" />
     <Compile Include="CodeDOM\MutationCodeCreator.cs" />
     <Compile Include="CodeDOM\MutationCodeFormatter.cs" />
     <Compile Include="CodeDOM\MutationCodeScope.cs" />
@@ -98,6 +99,16 @@
     <Compile Include="Guerilla\Attributes\GuerillaPreProcessAttribute.cs" />
     <Compile Include="Guerilla\TagLayoutValidator.cs" />
     <Compile Include="Guerilla\Tags\bitmap_block.cs" />
+    <Compile Include="Guerilla\Tags\BlockDefinitions\global_geometry_block_info_struct_block.cs" />
+    <Compile Include="Guerilla\Tags\BlockDefinitions\scenario_structure_bsp_reference_block.cs" />
+    <Compile Include="Guerilla\Tags\BlockDefinitions\shader_postprocess_bitmap_new_block.cs" />
+    <Compile Include="Guerilla\Tags\globals_block.cs" />
+    <Compile Include="Guerilla\Tags\model_animation_graph_block.cs" />
+    <Compile Include="Guerilla\Tags\multilingual_unicode_string_list_block.cs" />
+    <Compile Include="Guerilla\Tags\scenario_block.cs" />
+    <Compile Include="Guerilla\Tags\scenario_structure_bsp_block.cs" />
+    <Compile Include="Guerilla\Tags\shader_block.cs" />
+    <Compile Include="Guerilla\Tags\sound_cache_file_gestalt_block.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <EmbeddedResource Include="Forms\MainDialog.resx">
@@ -154,9 +165,7 @@
       <Install>true</Install>
     </BootstrapperPackage>
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Guerilla\Tags\BlockDefinitions\" />
-  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

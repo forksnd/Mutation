@@ -35,11 +35,11 @@ namespace Mutation.HEK.Common.TagFieldDefinitions
     {
         public field_type type;
         //PAD16
-        public int name_address;
-        public int definition_address;
-        public int group_tag;
+        public int name_address = 0;
+        public int definition_address = 0;
+        public int group_tag = 0;
 
-        private string name;
+        private string name = "";
         /// <summary>
         /// Gets the name of the field.
         /// </summary>

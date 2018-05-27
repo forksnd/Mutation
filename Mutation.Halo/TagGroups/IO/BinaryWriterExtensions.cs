@@ -10,6 +10,18 @@ namespace Mutation.Halo
 {
     public static class BinaryWriterExtensions
     {
+        /// <summary>
+        /// Writes the specified string to the stream followed by a null terminator.
+        /// </summary>
+        /// <param name="writer"></param>
+        /// <param name="value">String value to write</param>
+        public static void WriteNullTerminatedString(this BinaryWriter writer, string value)
+        {
+            // Write the string followed by a null character.
+            writer.Write(value.ToCharArray());
+            writer.Write((byte)0);
+        }
+
         public static void Write(this BinaryWriter writer, ShortBounds bounds)
         {
             // Write a ShortBounds object to the stream.
@@ -90,10 +102,10 @@ namespace Mutation.Halo
             writer.Write(color.value);
         }
 
-        public static void Write(this BinaryWriter writer, DatumIndex datum)
+        public static void Write(this BinaryWriter writer, datum_index datum)
         {
-            // Write a DatumIndex object to the stream.
-            writer.Write(datum.handle);
+            // Write a datum_index object to the stream.
+            writer.Write(datum.datum);
         }
 
         public static void Write(this BinaryWriter writer, string_id sid)
@@ -123,8 +135,8 @@ namespace Mutation.Halo
         public static void Write(this BinaryWriter writer, TagReference tag)
         {
             // Write a TagReference object to the stream.
-            writer.Write((byte[])tag.groupTag);
-            writer.Write(tag.datum);
+            writer.Write((byte[])tag.GroupTag);
+            writer.Write(tag.Datum);
         }
 
         public static void Write(this BinaryWriter writer, Point2d point)
@@ -212,6 +224,53 @@ namespace Mutation.Halo
             writer.Write(plane.j);
             writer.Write(plane.k);
             writer.Write(plane.d);
+        }
+
+        /// <summary>
+        /// Aligns the stream to the specified interval using padding bytes of null data.
+        /// </summary>
+        /// <param name="writer">Stream to align</param>
+        /// <param name="alignment">Alignment interval</param>
+        public static void AlignTo(this BinaryWriter writer, int alignment)
+        {
+            // Compute the number of bytes to skip.
+            long skip = alignment - (writer.BaseStream.Position % alignment);
+            if (skip == alignment)
+                skip = 0;
+
+            // If the current position is not properly aligned they align it.
+            if (skip > 0)
+            {
+                // Write an empty buffer to the file.
+                writer.Write(new byte[skip]);
+            }
+        }
+
+        /// <summary>
+        /// Writes a null terminated string to the stream.
+        /// </summary>
+        /// <param name="writer">Stream to write to</param>
+        /// <param name="value">String value to write</param>
+        /// <param name="maxLength">Maximum length in characters to write.</param>
+        public static void WriteNullTerminatedString(this BinaryWriter writer, string value, int maxLength = 0)
+        {
+            // Check if the string constant is longer than the max length.
+            if (maxLength > 0 && value.Length > maxLength)
+            {
+                // Write maxLength - 1 characters of the string constant.
+                writer.Write(value.Substring(0, maxLength - 1).ToCharArray());
+
+                // Write the null terminator.
+                writer.Write((byte)0);
+            }
+            else
+            {
+                // Write the string constant.
+                writer.Write(value.ToCharArray());
+
+                // Write padding.
+                writer.Write(new byte[maxLength - value.Length]);
+            }
         }
     }
 }

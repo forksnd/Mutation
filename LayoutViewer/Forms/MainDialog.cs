@@ -1100,7 +1100,7 @@ namespace LayoutViewer.Forms
                     case FieldType.BlockIndex: WriteMutationField("Guerilla.FieldTypes.BlockIndex", fieldName, fieldComment); break;
                     case FieldType.ColorArgb: WriteMutationField("Guerilla.FieldTypes.ColorArgb", fieldName, fieldComment); break;
                     case FieldType.ColorRgb: WriteMutationField("Guerilla.FieldTypes.ColorRgb", fieldName, fieldComment); break;
-                    case FieldType.DatumIndex: WriteMutationField("Guerilla.FieldTypes.DatumIndex", fieldName, fieldComment); break;
+                    case FieldType.DatumIndex: WriteMutationField("Guerilla.FieldTypes.datum_index", fieldName, fieldComment); break;
                     case FieldType.Enum:
                     case FieldType.Flags:
                         {

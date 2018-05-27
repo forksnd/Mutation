@@ -1,5 +1,6 @@
 ﻿using Microsoft.CSharp;
 using Mutation.Halo.TagGroups.Attributes;
+using Mutation.Halo.TagGroups.FieldTypes;
 using Mutation.HEK.Common;
 using Mutation.HEK.Common.TagFieldDefinitions;
 using System;
@@ -54,6 +55,16 @@ namespace LayoutViewer.CodeDOM
         public CodeNamespace CodeNamespace { get; set; }
 
         /// <summary>
+        /// List of nested code creators.
+        /// </summary>
+        public List<MutationCodeCreator> ChildCodeCreators { get; private set; }
+
+        /// <summary>
+        /// Parent code scope if one exists.
+        /// </summary>
+        public MutationCodeCreator ParentCodeCreator { get; private set; }
+
+        /// <summary>
         /// Gets the CodeDOM class object for this class.
         /// </summary>
         public CodeTypeDeclaration CodeClass { get; private set; }
@@ -63,6 +74,7 @@ namespace LayoutViewer.CodeDOM
         {
             "System",
             "System.IO",
+            "Mutation.Halo",
             "Mutation.Halo.TagGroups",
             "Mutation.Halo.TagGroups.Attributes",
             "Mutation.Halo.TagGroups.FieldTypes"
@@ -88,6 +100,29 @@ namespace LayoutViewer.CodeDOM
         /// </summary>
         private const string TagBlockDefinitionBaseType = "TagBlockDefinition";
 
+        /// <summary>
+        /// Internal dictionary used to store field types and their sizes.
+        /// </summary>
+        private static Dictionary<string, Tuple<int, int>> fieldSizeDictionary;
+        /// <summary>
+        /// Dictionary used to record the size of tag fields and blocks.
+        /// </summary>
+        private static Dictionary<string, Tuple<int, int>> FieldSizeDictionary
+        {
+            get
+            {
+                // Check if the dictionary singleton has been instantiated yet.
+                if (fieldSizeDictionary == null)
+                {
+                    // Build the field size dictionary.
+                    BuildFieldSizeDictionary();
+                }
+
+                // Return the dictionary.
+                return fieldSizeDictionary;
+            }
+        }
+
         #endregion
 
         #region Constructor
@@ -97,11 +132,9 @@ namespace LayoutViewer.CodeDOM
             // Build the value type dictionary.
             BuildValueTypeDictionary();
 
-            // Cache the binary reader and writer methods.
-            //CacheBinaryReaderWriterMethods();
-
             // Create a new code namespace for the class.
             this.CodeNamespace = new CodeNamespace(MutationTagsNamespace);
+            this.ChildCodeCreators = new List<MutationCodeCreator>();
 
             // Add the standard set of import directives to the namespace.
             foreach (string name in DefaultNamespaces)
@@ -117,6 +150,19 @@ namespace LayoutViewer.CodeDOM
 
         #endregion
 
+        public MutationCodeCreator CreateChildCodeCreator()
+        {
+            // Create a new code creator instance.
+            MutationCodeCreator codeCreator = new MutationCodeCreator();
+
+            // Assign us as the parent.
+            codeCreator.ParentCodeCreator = this;
+            this.ChildCodeCreators.Add(codeCreator);
+
+            // Return the new code creator.
+            return codeCreator;
+        }
+
         /// <summary>
         /// Creates a new class for the tag group and returns a MutationCodeCreator who's root namespace is the new class.
         /// </summary>
@@ -124,7 +170,7 @@ namespace LayoutViewer.CodeDOM
         /// <param name="blockAttribute">Tag block definition attribute for the block.</param>
         /// <param name="baseType">Name of the base type if this class inherits another type.</param>
         /// <returns>A new MutationCodeCreator for the child namespace.</returns>
-        public MutationCodeCreator CreateTagGroupClass(string className, CodeAttributeDeclaration blockAttribute, string baseType = TagBlockDefinitionBaseType)
+        public MutationCodeCreator CreateTagGroupClass(string className, CodeAttributeDeclaration blockAttribute, string baseType = "")
         {
             // Create a new code creator instance.
             MutationCodeCreator codeCreator = new MutationCodeCreator();
@@ -132,7 +178,17 @@ namespace LayoutViewer.CodeDOM
             // Create the class code type declaration.
             codeCreator.CodeClass = new CodeTypeDeclaration(className);
             codeCreator.CodeClass.IsClass = true;
-            codeCreator.CodeClass.BaseTypes.Add(new CodeTypeReference(baseType));
+
+            // Set us as the parent code creator.
+            codeCreator.ParentCodeCreator = this;
+            this.ChildCodeCreators.Add(codeCreator);
+
+            // Check if there is a base type for this object.
+            if (baseType != "")
+            {
+                // Set the object base type.
+                codeCreator.CodeClass.BaseTypes.Add(new CodeTypeReference(baseType));
+            }
 
             // Add the block attribute to the class declaration.
             codeCreator.CodeClass.CustomAttributes.Add(blockAttribute);
@@ -156,12 +212,228 @@ namespace LayoutViewer.CodeDOM
             // For now they are created the same as a tag group.
             MutationCodeCreator codeCreator = CreateTagGroupClass(blockName, attribute);
 
+            if (blockName == "g_null_block")
+            {
+
+            }
+
             // Add a region directive to the tag block.
             codeCreator.CodeClass.StartDirectives.Add(new CodeRegionDirective(CodeRegionMode.Start, blockName));
             codeCreator.CodeClass.EndDirectives.Add(new CodeRegionDirective(CodeRegionMode.End, string.Empty));
 
             // Return the new code creator for the tag block.
             return codeCreator;
+        }
+
+        public void FixStructureSize()
+        {
+            // Loop through all of the types in the scope and update their structure sizes.
+            foreach (MutationCodeCreator childType in this.ChildCodeCreators)
+            {
+                // Recursively fix nested structure sizes.
+                childType.FixStructureSize();
+            }
+
+            // Fix the size of this structure.
+            FixStructureSize(this.CodeClass);
+        }
+
+        private void FixStructureSize(CodeTypeDeclaration type)
+        {
+            // If this is part of the global scope then return, we have no fields to update.
+            if (type == null)
+                return;
+
+            // Check to make sure we haven't already fixed this type.
+            if (FieldSizeDictionary.ContainsKey(type.Name) == true)
+                return;
+
+            // Dictionary for nested type declarations that are not exposed to the global scope.
+            Dictionary<string, int> typeDeclarationDictionary = new Dictionary<string, int>();
+
+            // Loop through all the fields in the class and compute the structure size.
+            int cacheFileSize = 0, tagFileSize = 0;
+            for (int i = 0; i < type.Members.Count; i++)
+            {
+                // If this is a type declaration then cache the size of the type.
+                if (type.Members[i].GetType() == typeof(CodeTypeDeclaration))
+                {
+                    // Cast the current member to a type declaration object.
+                    CodeTypeDeclaration typeDeclaration = (CodeTypeDeclaration)type.Members[i];
+
+                    // Check to see if the field type dictionary has a size for the type's base type.
+                    if (FieldSizeDictionary.ContainsKey(typeDeclaration.BaseTypes[0].BaseType) == false)
+                    {
+                        // Field size dictionary does not contain an entry for this base type.
+                        throw new InvalidOperationException(string.Format("Field size dictionary does not contain an entry for field type '{0}'!", typeDeclaration.BaseTypes[0].BaseType));
+                    }
+
+                    // Cache it into the type dictionary.
+                    int typeSize = FieldSizeDictionary[typeDeclaration.BaseTypes[0].BaseType].Item1;
+                    typeDeclarationDictionary.Add(typeDeclaration.Name, typeSize);
+                }
+                else
+                {
+                    bool SkipField = false;
+
+                    // Cast the member to a code member field object.
+                    CodeMemberField field = (CodeMemberField)type.Members[i];
+
+                    field.Comments.Add(new CodeCommentStatement(string.Format("CacheOffset: {0}, TagOffset: {1}", cacheFileSize, tagFileSize), false));
+
+                    // Check if the type name exists in the type dictionary.
+                    int fieldSizeCacheMap = 0, fieldSizeTagFile = 0;
+                    if (typeDeclarationDictionary.ContainsKey(field.Type.BaseType) == true)
+                    {
+                        // Base type is a custom type, get the size from the type dictionary.
+                        fieldSizeCacheMap = typeDeclarationDictionary[field.Type.BaseType];
+                        fieldSizeTagFile = typeDeclarationDictionary[field.Type.BaseType];
+                    }
+                    else
+                    {
+                        // Check to see if the block type is already cached, if not find it and cache its size.
+                        if (FieldSizeDictionary.ContainsKey(field.Type.BaseType) == false)
+                        {
+                            // Find and cache the block type size.
+                            if (FindAndCacheStructureSize(field.Type.BaseType, true) == false)
+                            {
+                                // Failed to find the type.
+                                throw new InvalidOperationException(string.Format("Could not find code scope for field type '{0}'!", field.Type.BaseType));
+                            }
+                        }
+
+                        // Type is a primitive type or a type exposed at the global scope.
+                        fieldSizeCacheMap = FieldSizeDictionary[field.Type.BaseType].Item1;
+                        fieldSizeTagFile = FieldSizeDictionary[field.Type.BaseType].Item2;
+                    }
+
+                    // Check if the current field has a TagFieldFlags attribute which may mark it tag/map only.
+                    int fieldMultiplierCacheMap = 1, fieldMultiplierTagFile = 1;
+                    for (int x = 0; x < field.CustomAttributes.Count; x++)
+                    {
+                        // Check if this is a TagFieldFlags attribute.
+                        if (field.CustomAttributes[x].AttributeType.BaseType == "TagFieldFlagsAttribute")
+                        {
+                            // Check if this is a tag or map only field.
+                            CodeSnippetExpression argument = (CodeSnippetExpression)field.CustomAttributes[x].Arguments[0].Value;
+                            if (argument.Value == "TagFieldFlags.CacheMapOnly")
+                            {
+                                // Field is cache map only.
+                                fieldSizeTagFile = 0;
+                                break;
+                            }
+                            else if (argument.Value == "TagFieldFlags.TagFileOnly")
+                            {
+                                // Field is tag file only.
+                                fieldSizeCacheMap = 0;
+                                break;
+                            }
+                            else if (argument.Value == "TagFieldFlags.NonTagField")
+                            {
+                                // Field is not present in tags or cache maps.
+                                fieldSizeCacheMap = 0;
+                                fieldSizeTagFile = 0;
+                            }
+                        }
+                        else if (field.CustomAttributes[x].AttributeType.BaseType == "PaddingAttribute")
+                        {
+                            // Get the attribute parameter values.
+                            CodeFieldReferenceExpression paddingType = (CodeFieldReferenceExpression)field.CustomAttributes[x].Arguments[0].Value;
+                            CodePrimitiveExpression paddingLength = (CodePrimitiveExpression)field.CustomAttributes[x].Arguments[1].Value;
+
+                            // Check what type of padding this is.
+                            if (paddingType.FieldName == "Padding")
+                            {
+                                // Padding is present always.
+                                fieldMultiplierCacheMap = (int)paddingLength.Value;
+                                fieldMultiplierTagFile = (int)paddingLength.Value;
+                            }
+                            else if (paddingType.FieldName == "Useless")
+                            {
+                                // Padding is only present in tag files.
+                                fieldMultiplierCacheMap = 0;
+                                fieldMultiplierTagFile = (int)paddingLength.Value;
+                            }
+                            else
+                            {
+                                // Padding is fake fields for GUI.
+                                fieldMultiplierCacheMap = 0;
+                                fieldMultiplierTagFile = 0;
+                            }
+                        }
+                        else if (field.CustomAttributes[x].AttributeType.BaseType == "EngineVersionAttribute")
+                        {
+                            // Get the attribute parameter value.
+                            CodeSnippetExpression minimumVersion = (CodeSnippetExpression)field.CustomAttributes[x].Arguments[0].Value;
+
+                            // Check to see if this is a halo 2 xbox field.
+                            if (minimumVersion.Value.Contains("Halo2Vista") == true)
+                            {
+                                // This is a vista only field, skip it.
+                                SkipField = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Check if we should skip the field or not.
+                    if (SkipField == true)
+                        continue;
+
+                    // Update the sizes.
+                    cacheFileSize += (fieldMultiplierCacheMap * fieldSizeCacheMap);
+                    tagFileSize += (fieldMultiplierTagFile * fieldSizeTagFile);
+                }
+            }
+
+            // Add this tag group/block to the type dictionary.
+            FieldSizeDictionary.Add(type.Name, new Tuple<int, int>(cacheFileSize, tagFileSize));
+
+            // Loop through all of the custom attributes until we find the tag group or tag block definition attribute.
+            for (int i = 0; i < type.CustomAttributes.Count; i++)
+            {
+                // Check if this is the tag group or tag block attribute.
+                if (type.CustomAttributes[i].Name == "TagGroupDefinitionAttribute" || type.CustomAttributes[i].Name == "TagBlockDefinitionAttribute")
+                {
+                    // Update the sizes for this tag definition.
+                    type.CustomAttributes[i].Arguments[0].Value = new CodeSnippetExpression(string.Format("cacheFileSize: {0}", cacheFileSize));
+                    type.CustomAttributes[i].Arguments[1].Value = new CodeSnippetExpression(string.Format("tagFileSize: {0}", tagFileSize));
+                }
+            }
+        }
+
+        private bool FindAndCacheStructureSize(string typeName, bool searchParent)
+        {
+            // Loop through all of the child types in this scope and search for the type.
+            foreach (CodeTypeDeclaration childType in this.CodeNamespace.Types)
+            {
+                // Check if this is the type we are looking for.
+                //System.Diagnostics.Debug.WriteLine(string.Format("Searching: {0}", childType.Name));
+                if (childType.Name == typeName)
+                {
+                    // Cache the structure size for this type.
+                    FixStructureSize(childType);
+                    return true;
+                }
+            }
+
+            // Loop through all of the child code creators and recursively search for the type.
+            foreach (MutationCodeCreator childCreator in this.ChildCodeCreators)
+            {
+                // Recursively search for the type.
+                if (childCreator.FindAndCacheStructureSize(typeName, false) == true)
+                    return true;
+            }
+
+            // Type was not found in any child scope, recursively search the parent scope.
+            if (searchParent == true && this.ParentCodeCreator != null)
+            {
+                // Search the parent code scope.
+                return this.ParentCodeCreator.FindAndCacheStructureSize(typeName, true);
+            }
+
+            // The type was not found.
+            return false;
         }
 
         /// <summary>
@@ -181,6 +453,22 @@ namespace LayoutViewer.CodeDOM
 
             // Add any attributes for this field.
             field.CustomAttributes = attributeCollection;
+
+            // Check if this field has an EngineVersionAttribute, and if so move it to the end of the attribute list.
+            for (int i = 0; i < field.CustomAttributes.Count; i++)
+            {
+                // Check if this attribute is the EngineVersionAttribute and if so move it to the front of the list.
+                if (field.CustomAttributes[i].Name == "EngineVersionAttribute")
+                {
+                    // Move the attribute to the end of the list so it appears on top of the field declaration.
+                    CodeAttributeDeclaration attribute = field.CustomAttributes[i];
+                    field.CustomAttributes.RemoveAt(i);
+                    field.CustomAttributes.Add(attribute);
+
+                    // Break the loop.
+                    break;
+                }
+            }
 
             // Add the field to the class definition.
             this.CodeClass.Members.Add(field);
@@ -208,6 +496,22 @@ namespace LayoutViewer.CodeDOM
 
             // Add any attributes for this field.
             field.CustomAttributes = attributeCollection;
+
+            // Check if this field has an EngineVersionAttribute, and if so move it to the end of the attribute list.
+            for (int i = 0; i < field.CustomAttributes.Count; i++)
+            {
+                // Check if this attribute is the EngineVersionAttribute and if so move it to the front of the list.
+                if (field.CustomAttributes[i].Name == "EngineVersionAttribute")
+                {
+                    // Move the attribute to the end of the list so it appears on top of the field declaration.
+                    CodeAttributeDeclaration attribute = field.CustomAttributes[i];
+                    field.CustomAttributes.RemoveAt(i);
+                    field.CustomAttributes.Add(attribute);
+
+                    // Break the loop.
+                    break;
+                }
+            }
 
             // Add the field to the class definition.
             this.CodeClass.Members.Add(field);
@@ -244,9 +548,9 @@ namespace LayoutViewer.CodeDOM
                     continue;
 
                 // Create a code safe field name for the enum option.
-                string displayName, units, tooltip;
+                string displayName, units, tooltip, color;
                 EditorMarkUpFlags markupFlags;
-                string optionName = codeScope.CreateCodeSafeFieldName(field_type._field_enum_option, field.options[i], out displayName, out units, out tooltip, out markupFlags);
+                string optionName = codeScope.CreateCodeSafeFieldName(field_type._field_enum_option, field.options[i], out displayName, out units, out tooltip, out color, out markupFlags);
 
                 // Create a new CodeMemberField for the enum option.
                 CodeMemberField option = new CodeMemberField
@@ -259,10 +563,26 @@ namespace LayoutViewer.CodeDOM
                 };
 
                 // Create a new UI markup attribute and add it to the enum option.
-                option.CustomAttributes.Add(EditorMarkUpAttribute.CreateAttributeDeclaration(flags: markupFlags, displayName: displayName, unitsSpecifier: units, tooltipText: tooltip));
+                option.CustomAttributes.Add(EditorMarkUpAttribute.CreateAttributeDeclaration(flags: markupFlags, displayName: displayName, unitsSpecifier: units, tooltipText: tooltip, fieldColor: color));
 
                 // Add the option to the enum.
                 @enum.Members.Add(option);
+            }
+
+            // Check if this field has an EngineVersionAttribute, and if so move it to the end of the attribute list.
+            for (int i = 0; i < @enum.CustomAttributes.Count; i++)
+            {
+                // Check if this attribute is the EngineVersionAttribute and if so move it to the front of the list.
+                if (@enum.CustomAttributes[i].Name == "EngineVersionAttribute")
+                {
+                    // Move the attribute to the end of the list so it appears on top of the field declaration.
+                    CodeAttributeDeclaration attribute = @enum.CustomAttributes[i];
+                    @enum.CustomAttributes.RemoveAt(i);
+                    @enum.CustomAttributes.Add(attribute);
+
+                    // Break the loop.
+                    break;
+                }
             }
 
             // Add the enum to the class definition.
@@ -283,6 +603,22 @@ namespace LayoutViewer.CodeDOM
 
             // Add any attributes for this field.
             field.CustomAttributes = attributeCollection;
+
+            // Check if this field has an EngineVersionAttribute, and if so move it to the end of the attribute list.
+            for (int i = 0; i < field.CustomAttributes.Count; i++)
+            {
+                // Check if this attribute is the EngineVersionAttribute and if so move it to the front of the list.
+                if (field.CustomAttributes[i].Name == "EngineVersionAttribute")
+                {
+                    // Move the attribute to the end of the list so it appears on top of the field declaration.
+                    CodeAttributeDeclaration attribute = field.CustomAttributes[i];
+                    field.CustomAttributes.RemoveAt(i);
+                    field.CustomAttributes.Add(attribute);
+
+                    // Break the loop.
+                    break;
+                }
+            }
 
             // Add the field to the class definition.
             this.CodeClass.Members.Add(field);
@@ -327,6 +663,22 @@ namespace LayoutViewer.CodeDOM
             // Add any attributes for this field.
             field.CustomAttributes = attributeCollection;
 
+            // Check if this field has an EngineVersionAttribute, and if so move it to the end of the attribute list.
+            for (int i = 0; i < field.CustomAttributes.Count; i++)
+            {
+                // Check if this attribute is the EngineVersionAttribute and if so move it to the front of the list.
+                if (field.CustomAttributes[i].Name == "EngineVersionAttribute")
+                {
+                    // Move the attribute to the end of the list so it appears on top of the field declaration.
+                    CodeAttributeDeclaration attribute = field.CustomAttributes[i];
+                    field.CustomAttributes.RemoveAt(i);
+                    field.CustomAttributes.Add(attribute);
+
+                    // Break the loop.
+                    break;
+                }
+            }
+
             // Add the field to the class definition.
             this.CodeClass.Members.Add(field);
         }
@@ -349,6 +701,22 @@ namespace LayoutViewer.CodeDOM
 
             // Add any attributes for this field.
             field.CustomAttributes = attributeCollection;
+
+            // Check if this field has an EngineVersionAttribute, and if so move it to the end of the attribute list.
+            for (int i = 0; i < field.CustomAttributes.Count; i++)
+            {
+                // Check if this attribute is the EngineVersionAttribute and if so move it to the front of the list.
+                if (field.CustomAttributes[i].Name == "EngineVersionAttribute")
+                {
+                    // Move the attribute to the end of the list so it appears on top of the field declaration.
+                    CodeAttributeDeclaration attribute = field.CustomAttributes[i];
+                    field.CustomAttributes.RemoveAt(i);
+                    field.CustomAttributes.Add(attribute);
+
+                    // Break the loop.
+                    break;
+                }
+            }
 
             // Add the field to the class definition.
             this.CodeClass.Members.Add(field);
@@ -406,7 +774,7 @@ namespace LayoutViewer.CodeDOM
             ValueTypeDictionary.Add(field_type._field_long_enum, typeof(int));
             ValueTypeDictionary.Add(field_type._field_byte_flags, typeof(byte));
             ValueTypeDictionary.Add(field_type._field_word_flags, typeof(short));
-            ValueTypeDictionary.Add(field_type._field_long_flags, typeof(int));
+            ValueTypeDictionary.Add(field_type._field_long_flags, typeof(uint));
             ValueTypeDictionary.Add(field_type._field_byte_block_flags, typeof(byte));
             ValueTypeDictionary.Add(field_type._field_word_block_flags, typeof(short));
             ValueTypeDictionary.Add(field_type._field_long_block_flags, typeof(int));
@@ -434,6 +802,59 @@ namespace LayoutViewer.CodeDOM
                 {
                     // Add the field type to the value type dictionary.
                     ValueTypeDictionary.Add(singleAttr.FieldType, fieldType);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Builds the field size dictionary using all known field types and their sizes.
+        /// </summary>
+        private static void BuildFieldSizeDictionary()
+        {
+            // Initialize the dictionary.
+            fieldSizeDictionary = new Dictionary<string, Tuple<int, int>>();
+
+            // Add the built in primitive types.
+            fieldSizeDictionary.Add("System.Byte", new Tuple<int, int>(1, 1));
+            fieldSizeDictionary.Add("System.Char", new Tuple<int, int>(1, 1));
+            fieldSizeDictionary.Add("System.Int16", new Tuple<int, int>(2, 2));
+            fieldSizeDictionary.Add("System.UInt16", new Tuple<int, int>(2, 2));
+            fieldSizeDictionary.Add("System.Int32", new Tuple<int, int>(4, 4));
+            fieldSizeDictionary.Add("System.UInt32", new Tuple<int, int>(4, 4));
+            fieldSizeDictionary.Add("System.Single", new Tuple<int, int>(4, 4));
+
+            // Special cases.
+            fieldSizeDictionary.Add("Explanation", new Tuple<int, int>(0, 0));
+            fieldSizeDictionary.Add("tag_block`1", new Tuple<int, int>(8, 8));
+
+            // Generate a list of types from the Mutation.Halo assembly.
+            Type[] assemblyTypes = Assembly.GetAssembly(typeof(GuerillaTypeAttribute)).GetTypes();
+
+            // Find all the types that have a GuerillaTypeAttribute attached to them.
+            var guerillaTypes = from type in assemblyTypes
+                                where type.GetCustomAttributes(typeof(GuerillaTypeAttribute), false).Count() > 0
+                                select type;
+
+            // Loop through all of the field types and add them to the dictionary.
+            foreach (Type fieldType in guerillaTypes)
+            {
+                // Find the kSizeOf field so we can add this type to the size dictionary.
+                FieldInfo kSizeOf = fieldType.GetFields().FirstOrDefault(field => field.Name == "kSizeOf");
+                if (kSizeOf == null)
+                {
+                    // Field type does not have a kSizeOf field.
+                    throw new InvalidOperationException(string.Format("Field type '{0}' does not contain a kSizeOf field!", fieldType.Name));
+                }
+
+                // Check to make sure we haven't already added this type.
+                if (fieldSizeDictionary.ContainsKey(fieldType.Name) == false)
+                {
+                    // Create a new instance of the field so that we can get the kSizeOf value.
+                    object fieldInstance = Activator.CreateInstance(fieldType);
+
+                    // Cache the field type and its size.
+                    int fieldSize = (int)kSizeOf.GetValue(fieldType);
+                    fieldSizeDictionary.Add(fieldType.Name, new Tuple<int, int>(fieldSize, fieldSize));
                 }
             }
         }

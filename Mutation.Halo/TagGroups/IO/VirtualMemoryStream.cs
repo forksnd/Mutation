@@ -30,5 +30,18 @@ namespace Mutation.Halo.TagGroups.IO
                 base.Position = value - BaseAddress;
             }
         }
+
+        public VirtualMemoryStream(long baseAddress)
+        {
+            // Initialize fields.
+            this.BaseAddress = baseAddress;
+        }
+
+        public VirtualMemoryStream(long baseAddress, int capacity)
+        {
+            // Initialize fields.
+            this.BaseAddress = baseAddress;
+            this.Capacity = capacity;
+        }
     }
 }

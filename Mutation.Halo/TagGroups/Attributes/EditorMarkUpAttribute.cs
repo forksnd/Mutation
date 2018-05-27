@@ -33,6 +33,14 @@ namespace Mutation.Halo.TagGroups.Attributes
         /// This field should be used for the name of the each block in a tag_block field.
         /// </summary>
         BlockName = 0x8,
+        /// <summary>
+        /// Unknown purpose, guerilla does not display this field.
+        /// </summary>
+        Unknown1 = 0x10,
+        /// <summary>
+        /// Unknown purpose, guerilla does not display this field.
+        /// </summary>
+        Unknown3 = 0x20
     }
 
     /// <summary>
@@ -62,19 +70,25 @@ namespace Mutation.Halo.TagGroups.Attributes
         public string ToolTipText { get; private set; }
 
         /// <summary>
+        /// Color of the tag block field.
+        /// </summary>
+        public string FieldColor {  get; private set; }
+
+        /// <summary>
         /// Initializes a new EditorMarkUpAttribute instance using the values provided.
         /// </summary>
         /// <param name="flags">Display flags for the field.</param>
         /// <param name="displayName">UI display name for the field.</param>
         /// <param name="unitsSpecifier">Units specifier for the field.</param>
         /// <param name="tooltipText">Tooltip text for the field.</param>
-        public EditorMarkUpAttribute(EditorMarkUpFlags flags = EditorMarkUpFlags.None, string displayName = "", string unitsSpecifier = "", string tooltipText = "")
+        public EditorMarkUpAttribute(EditorMarkUpFlags flags = EditorMarkUpFlags.None, string displayName = "", string unitsSpecifier = "", string tooltipText = "", string fieldColor = "")
         {
             // Initialize fields.
             this.Flags = flags;
             this.DisplayName = displayName;
             this.UnitsSpecifier = unitsSpecifier;
             this.ToolTipText = tooltipText;
+            this.FieldColor = fieldColor;
         }
 
         /// <summary>
@@ -85,7 +99,7 @@ namespace Mutation.Halo.TagGroups.Attributes
         /// <param name="unitsSpecifier">Units specifier.</param>
         /// <param name="tooltipText">Tooltip text.</param>
         /// <returns>A CodeDOM attribute declaration.</returns>
-        public static CodeAttributeDeclaration CreateAttributeDeclaration(EditorMarkUpFlags flags = EditorMarkUpFlags.None, string displayName = "", string unitsSpecifier = "", string tooltipText = "")
+        public static CodeAttributeDeclaration CreateAttributeDeclaration(EditorMarkUpFlags flags = EditorMarkUpFlags.None, string displayName = "", string unitsSpecifier = "", string tooltipText = "", string fieldColor = "")
         {
             // Create the attribute declaration and initialize it with no parameters.
             CodeAttributeDeclaration attribute = new CodeAttributeDeclaration(typeof(EditorMarkUpAttribute).Name);
@@ -118,6 +132,13 @@ namespace Mutation.Halo.TagGroups.Attributes
                 attribute.Arguments.Add(new CodeAttributeArgument(new CodeSnippetExpression(string.Format("tooltipText: {0}", tooltipText))));
             }
 
+            // Check if the field color is present.
+            if (fieldColor != string.Empty)
+            {
+                // Add an argument for the field color.
+                attribute.Arguments.Add(new CodeAttributeArgument(new CodeSnippetExpression(string.Format("fieldColor: {0}", fieldColor))));
+            }
+
             // Return the new attribute declaration.
             return attribute;
         }
@@ -127,7 +148,7 @@ namespace Mutation.Halo.TagGroups.Attributes
         /// </summary>
         /// <param name="flags">Flags to convert into a string.</param>
         /// <returns>String representation of the flag values set.</returns>
-        private static string MarkUpFlagsToString(EditorMarkUpFlags flags)
+        public static string MarkUpFlagsToString(EditorMarkUpFlags flags)
         {
             string flagsStr = string.Empty;
 

@@ -19,6 +19,11 @@ namespace Mutation.Halo.TagGroups.FieldTypes
         /// </summary>
         public const int kSizeOf = 4;
 
+        /// <summary>
+        /// Size of the string constant.
+        /// </summary>
+        public const int kSizeOfStringIdConstant = 128;
+
         public const int _string_id_invalid = -1;
         public const int _string_id_empty_string = 0;
 

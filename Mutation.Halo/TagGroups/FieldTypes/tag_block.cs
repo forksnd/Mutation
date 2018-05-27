@@ -7,13 +7,14 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Reflection;
 
 namespace Mutation.Halo.TagGroups.FieldTypes
 {
 #warning tag_block not fully implemented
     [GuerillaType(field_type._field_block)]
     [GuerillaType(field_type._field_struct)]
-    public class tag_block<T> : IMetaDefinition, IList<T> where T : IMetaDefinition
+    public class tag_block<T> : IList<T>
     {
         /// <summary>
         /// Gets the size of the tag_block struct.
@@ -21,33 +22,48 @@ namespace Mutation.Halo.TagGroups.FieldTypes
         public const int kSizeOf = 8;
 
         /// <summary>
-        /// Gets the number of child blocks this tag_block currently has.
+        /// Gets or sets the number of child blocks this tag_block currently has.
         /// </summary>
-        public int count;
+        public int Count { get { return this.blocks.Count; } }
+
         /// <summary>
         /// Gets the address of the tag_block data.
         /// </summary>
-        public int address;
+        public uint Address { get; set; }
+
         /// <summary>
         /// Gets the field type of the underlying tag block definition.
         /// </summary>
-        public readonly Type definition = typeof(T);
+        public readonly Type Definition = typeof(T);
 
         /// <summary>
-        /// Gets an array of of blocks of type <see cref="definition"/>.
+        /// Gets a list of blocks of type <see cref="definition"/>.
         /// </summary>
-        public T[] blocks;
+        private List<T> blocks = new List<T>();
 
         /// <summary>
-        /// Gets the size of the underlying tag block definition.
+        /// Gets the size of the underlying tag block definition when used in a cache map.
         /// </summary>
-        public int DefinitionSize
+        public int CacheFileSize
         {
             get
             {
                 // Check if there is a TagBlockDefinitionAttribute on this type.
-                object[] attribute = this.definition.GetType().GetCustomAttributes(typeof(TagBlockDefinitionAttribute), false);
-                return (attribute[0] as TagBlockDefinitionAttribute).SizeOf;
+                TagBlockDefinitionAttribute attribute = (TagBlockDefinitionAttribute)this.Definition.GetCustomAttribute(typeof(TagBlockDefinitionAttribute));
+                return attribute.CacheFileSize;
+            }
+        }
+
+        /// <summary>
+        /// Gets the size of the underlying tag block definition when used in a tag file.
+        /// </summary>
+        public int TagFileSize
+        {
+            get
+            {
+                // Check if there is a TagBlockDefinitionAttribute on this type.
+                TagBlockDefinitionAttribute attribute = (TagBlockDefinitionAttribute)this.Definition.GetCustomAttribute(typeof(TagBlockDefinitionAttribute));
+                return attribute.TagFileSize;
             }
         }
 
@@ -59,8 +75,8 @@ namespace Mutation.Halo.TagGroups.FieldTypes
             get
             {
                 // Check if there is a TagBlockDefinitionAttribute on this type.
-                object[] attribute = this.definition.GetType().GetCustomAttributes(typeof(TagBlockDefinitionAttribute), false);
-                return (attribute[0] as TagBlockDefinitionAttribute).Alignment;
+                TagBlockDefinitionAttribute attribute = (TagBlockDefinitionAttribute)this.Definition.GetCustomAttribute(typeof(TagBlockDefinitionAttribute));
+                return attribute.Alignment;
             }
         }
 
@@ -72,8 +88,8 @@ namespace Mutation.Halo.TagGroups.FieldTypes
             get
             {
                 // Check if there is a TagBlockDefinitionAttribute on this type.
-                object[] attribute = this.definition.GetType().GetCustomAttributes(typeof(TagBlockDefinitionAttribute), false);
-                return (attribute[0] as TagBlockDefinitionAttribute).MaxBlockCount;
+                TagBlockDefinitionAttribute attribute = (TagBlockDefinitionAttribute)this.Definition.GetCustomAttribute(typeof(TagBlockDefinitionAttribute));
+                return attribute.MaxBlockCount;
             }
         }
 
@@ -88,99 +104,32 @@ namespace Mutation.Halo.TagGroups.FieldTypes
         //    this.definition = typeof(T);
         //}
 
-        #region IMetaDefinition
-
-        public void PreProcessDefinition()
-        {
-        }
-
-        public void PostProcessDefinition()
-        {
-        }
-
-        public void ReadDefinition(BinaryReader reader)
-        {
-        }
-
-        public void WriteDefinition(BinaryWriter writer)
-        {
-        }
-
-        #endregion
-
         #region IList Members
 
         public int IndexOf(T item)
         {
-            // Loop through the array and search for the element specified.
-            for (int i = 0; i < this.count; i++)
-            {
-                // Check if the blocks are equal.
-                if (this.blocks[i].Equals(item) == true)
-                    return i;
-            }
-
-            // No matching block was found.
-            return -1;
+            return this.blocks.IndexOf(item);
         }
 
         public void Insert(int index, T item)
         {
-            // Check if the index is within the bounds of the array.
-            if (index < 0 || index >= this.count)
-                throw new ArgumentException("\"index\" is out of the bounds of the tag_block array!");
-
-            // Allocate a new block array.
-            T[] newBlocks = new T[this.count + 1];
-
-            // Copy the old blocks and the new block into the new block array.
-            Array.Copy(this.blocks, 0, newBlocks, 0, index);
-            newBlocks[index] = item;
-            Array.Copy(this.blocks, index, newBlocks, index + 1, count - index);
-
-            // Set the block array to the new array we just made and adjust the count.
-            this.count++;
-            this.blocks = newBlocks;
+            this.blocks.Insert(index, item);
         }
 
         public void RemoveAt(int index)
         {
-            // Check if the index is within the bounds of the array.
-            if (index < 0 || index >= this.count)
-                throw new ArgumentException("\"index\" is out of the bounds of the tag_block array!");
-
-            // Allocate a new block array.
-            T[] newBlocks = new T[this.count - 1];
-
-            // Loop through the block array and copy each block except for the one specified.
-            for (int i = 0, x = 0; i < this.count && i != index; i++)
-            {
-                // Copy the block.
-                newBlocks[x] = this.blocks[i];
-            }
-
-            // Set the block array to the new array we just made and adjust the count.
-            this.count--;
-            this.blocks = newBlocks;
+            this.blocks.RemoveAt(index);
         }
 
         public T this[int index]
         {
             get
             {
-                // Check if the index is within the bounds of the array.
-                if (index < 0 || index >= this.count)
-                    throw new ArgumentException("\"index\" is out of the bounds of the tag_block array!");
-
                 // Return the block instance.
                 return this.blocks[index];
             }
             set
             {
-                // Check if the index is within the bounds of the array.
-                if (index < 0 || index >= this.count)
-                    throw new ArgumentException("\"index\" is out of the bounds of the tag_block array!");
-
                 // Set the block instance.
                 this.blocks[index] = value;
             }
@@ -188,51 +137,23 @@ namespace Mutation.Halo.TagGroups.FieldTypes
 
         public void Add(T item)
         {
-            // Check if we can add another block.
-            if (this.count == this.MaxBlockCount)
-                throw new Exception("tag_block has reached its maximum capacity!");
-
-            // Resize the array.
-            Array.Resize<T>(ref this.blocks, this.count + 1);
-
-            // Save the new block.
-            this.blocks[this.count++] = item;
+            this.blocks.Add(item);
         }
 
         public void Clear()
         {
             // Clear the block array.
-            this.count = 0;
-            this.blocks = new T[this.count];
+            this.blocks.Clear();
         }
 
         public bool Contains(T item)
         {
-            // Loop through each block and see if it's equal to the block specified.
-            foreach (T block in this.blocks)
-            {
-                // Compare the blocks.
-                if (block.Equals(item) == true)
-                    return true;
-            }
-
-            // The specified block was not found in the array.
-            return false;
+            return this.blocks.Contains(item);
         }
 
         public void CopyTo(T[] array, int arrayIndex)
         {
-            // Loop through the blocks and copy as many as we can.
-            for (int i = arrayIndex, x = 0; i < array.Length && x < this.count; i++, x++)
-            {
-                // Copy the block.
-                //array[i] = (T)this.blocks[x].Clone();
-            }
-        }
-
-        public int Count
-        {
-            get { return this.count; }
+            this.blocks.CopyTo(array, arrayIndex);
         }
 
         public bool IsReadOnly
@@ -242,32 +163,13 @@ namespace Mutation.Halo.TagGroups.FieldTypes
 
         public bool Remove(T item)
         {
-            // Check if the specified block exists in the array.
-            int index = IndexOf(item);
-            if (index == -1)
-                return false;
-
-            // Allocate a new block array.
-            T[] newBlocks = new T[this.count - 1];
-
-            // Loop through the block array and copy each block except for the one specified.
-            for (int i = 0, x = 0; i < this.count && i != index; i++)
-            {
-                // Copy the block.
-                newBlocks[x] = this.blocks[i];
-            }
-
-            // Set the block array to the new array we just made and adjust the count.
-            this.count--;
-            this.blocks = newBlocks;
-
-            // Done, the item was successfully removed.
-            return true;
+            // Remove the item from the collection.
+            return this.blocks.Remove(item);
         }
 
         public IEnumerator<T> GetEnumerator()
         {
-            return (IEnumerator<T>)this.blocks.GetEnumerator();
+            return this.blocks.GetEnumerator();
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()

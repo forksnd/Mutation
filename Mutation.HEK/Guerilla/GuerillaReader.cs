@@ -222,6 +222,9 @@ namespace Mutation.HEK.Guerilla
                         case field_type._field_char_enum:
                         case field_type._field_enum:
                         case field_type._field_long_enum: field = new enum_definition(); break;
+                        case field_type._field_char_block_index1:
+                        case field_type._field_short_block_index1:
+                        case field_type._field_long_block_index1:
                         case field_type._field_char_block_index2:
                         case field_type._field_short_block_index2:
                         case field_type._field_long_block_index2: field = new block_index_custom_search_definition(); break;

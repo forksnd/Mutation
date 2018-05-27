@@ -10,6 +10,24 @@ namespace Mutation.Halo
 {
     public static class BinaryReaderExtensions
     {
+        /// <summary>
+        /// Reads a null terminated string from the stream.
+        /// </summary>
+        /// <param name="reader"></param>
+        /// <returns>The string that was read</returns>
+        public static string ReadNullTerminatedString(this BinaryReader reader)
+        {
+            string str = "";
+            char c = '\0';
+
+            // Loop and read until we hit a null character.
+            while ((c = reader.ReadChar()) != '\0')
+                str += c;
+
+            // Return the string.
+            return str;
+        }
+
         public static ShortBounds ReadShortBounds(this BinaryReader reader)
         {
             // Read a ShortBounds object from the stream.
@@ -120,11 +138,11 @@ namespace Mutation.Halo
             return color;
         }
 
-        public static DatumIndex ReadDatumIndex(this BinaryReader reader)
+        public static datum_index ReadDatumIndex(this BinaryReader reader)
         {
-            // Read a DatumIndex object from the stream.
-            DatumIndex index = new DatumIndex();
-            index.handle = reader.ReadUInt32();
+            // Read a datum_index object from the stream.
+            datum_index index = new datum_index();
+            index.datum = reader.ReadUInt32();
 
             return index;
         }
@@ -169,8 +187,8 @@ namespace Mutation.Halo
         {
             // Read a TagReference object from the stream.
             TagReference reference = new TagReference();
-            reference.groupTag = reader.ReadGroupTag();
-            reference.datum = reader.ReadDatumIndex();
+            reference.GroupTag = reader.ReadGroupTag();
+            reference.Datum = reader.ReadDatumIndex();
 
             return reference;
         }

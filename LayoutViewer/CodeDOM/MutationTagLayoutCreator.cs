@@ -39,11 +39,11 @@ namespace LayoutViewer.CodeDOM
         /// </summary>
         public MutationCodeCreator CodeCreator { get; set; }
 
-        public MutationTagLayoutCreator(TagBlockDefinition tagBlockDefinition)
+        public MutationTagLayoutCreator(TagBlockDefinition tagBlockDefinition, MutationCodeCreator parentCodeCreator)
         {
             // Initialize fields.
             this.TagBlockDefinition = tagBlockDefinition;
-            this.CodeCreator = new MutationCodeCreator();
+            this.CodeCreator = parentCodeCreator.CreateChildCodeCreator();
         }
 
         public void CreateCodeScope(MutationCodeScope parentScope)
@@ -121,7 +121,7 @@ namespace LayoutViewer.CodeDOM
             }
         }
 
-        private void ProcessTagBlockDefinition(GuerillaReader reader, TagBlockDefinition blockDefinition, MutationCodeCreator blockCodeCreator, 
+        public void ProcessTagBlockDefinition(GuerillaReader reader, TagBlockDefinition blockDefinition, MutationCodeCreator blockCodeCreator, 
             MutationCodeScope blockCodeScope, MutationCodeScope parentScope)
         {
             // Get the field set index that most closely resembles halo 2 xbox layout.
@@ -131,25 +131,28 @@ namespace LayoutViewer.CodeDOM
             ProcessFields(blockDefinition.TagFields[fieldSetIndex], reader, blockCodeCreator, blockCodeScope, parentScope);
         }
 
-        private void ProcessFields(List<tag_field> fields, GuerillaReader reader, MutationCodeCreator blockCodeCreator,
+        public void ProcessFields(List<tag_field> fields, GuerillaReader reader, MutationCodeCreator blockCodeCreator,
             MutationCodeScope blockCodeScope, MutationCodeScope parentScope)
         {
             // Loop through all of the fields in the collection.
             for (int i = 0; i < fields.Count; i++)
             {
                 // Create a new field and add it to the scope for this block.
-                string displayName, units, tooltip;
+                string displayName, units, tooltip, color;
                 EditorMarkUpFlags markupFlags;
-                string fieldName = blockCodeScope.CreateCodeSafeFieldName(fields[i].type, fields[i].Name, out displayName, out units, out tooltip, out markupFlags);
+                string fieldName = blockCodeScope.CreateCodeSafeFieldName(fields[i].type, fields[i].Name, out displayName, out units, out tooltip, out color, out markupFlags);
 
                 // Create an attribute collection for any attributes we might add to the field.
                 CodeAttributeDeclarationCollection attributeCollection = new CodeAttributeDeclarationCollection();
 
+                // Add the min/max engine version attribute.
+                attributeCollection.Add(EngineVersionAttribute.CreateAttributeDeclaration(Mutation.Halo.EngineVersion.Halo2Xbox, Mutation.Halo.EngineVersion.Halo2Vista));
+
                 // Make sure at least one of the required fields for a UI markup attribute is valid.
-                if (markupFlags != EditorMarkUpFlags.None || displayName != string.Empty || units != string.Empty || tooltip != string.Empty)
+                if (markupFlags != EditorMarkUpFlags.None || displayName != string.Empty || units != string.Empty || tooltip != string.Empty || color != string.Empty)
                 {
                     // Create the UI markup attribute using the information provided.
-                    attributeCollection.Add(EditorMarkUpAttribute.CreateAttributeDeclaration(flags: markupFlags, displayName: displayName, unitsSpecifier: units, tooltipText: tooltip));
+                    attributeCollection.Add(EditorMarkUpAttribute.CreateAttributeDeclaration(flags: markupFlags, displayName: displayName, unitsSpecifier: units, tooltipText: tooltip, fieldColor: color));
                 }
 
                 // Handle each field accordingly.
@@ -199,29 +202,71 @@ namespace LayoutViewer.CodeDOM
                             blockCodeCreator.AddCustomTypedField(fields[i].type, fieldName, bitmaskScope.Namespace, attributeCollection);
                             break;
                         }
+                    case field_type._field_byte_block_flags:
+                    case field_type._field_word_block_flags:
+                    case field_type._field_long_block_flags:
+                        {
+                            // Get the tag block definition for this address.
+                            TagBlockDefinition blockDefinition = reader.TagBlockDefinitions[fields[i].definition_address];
+
+                            // Check if the tag block definition already exists in the parent code scope, if not process it.
+                            MutationCodeScope tagBlockScope = FindOrProcessTagBlock(reader, blockDefinition.s_tag_block_definition.address, parentScope);
+
+                            // Create the BlockFlags attribute for this field.
+                            attributeCollection.Add(BlockFlagsAttribute.CreateAttributeDeclaration(tagBlockScope.Namespace));
+
+                            // Add the field to the collection.
+                            blockCodeCreator.AddField(fields[i].type, fieldName, attributeCollection);
+                            break;
+                        }
+                    case field_type._field_char_block_index1:
+                    case field_type._field_short_block_index1:
+                    case field_type._field_long_block_index1:
+                    case field_type._field_char_block_index2:
+                    case field_type._field_short_block_index2:
+                    case field_type._field_long_block_index2:
+                        {
+                            // Cast the field to a block index search definition.
+                            block_index_custom_search_definition blockSearch = (block_index_custom_search_definition)fields[i];
+
+                            // Check if there is a tag block for this definition address, if not then there are callback functions.
+                            if (reader.TagBlockDefinitions.ContainsKey(fields[i].definition_address) == true)
+                            {
+                                // Get the tag block definition for this address.
+                                TagBlockDefinition blockDefinition = reader.TagBlockDefinitions[fields[i].definition_address];
+
+                                // Check if the tag block definition already exists in the parent code scope, if not process it.
+                                MutationCodeScope tagBlockScope = FindOrProcessTagBlock(reader, blockDefinition.s_tag_block_definition.address, parentScope);
+
+                                // Create the BlockFlags attribute for this field.
+                                attributeCollection.Add(BlockIndexAttribute.CreateAttributeDeclaration(tagBlockScope.Namespace));
+                            }
+
+                            // TODO: When we actually create the callback functions for these blocks create some sort of dictionary so
+                            // we can resolve them when exporting.
+
+                            // Add the field to the collection.
+                            blockCodeCreator.AddField(fields[i].type, fieldName, attributeCollection);
+
+                            // Check if we need to add a comment for the callback proc addresses.
+                            if (reader.TagBlockDefinitions.ContainsKey(fields[i].definition_address) == false)
+                            {
+                                // Create a comment with the custom search proc addresses so we can analyze them later.
+                                CodeComment comment = new CodeComment(string.Format("get_block_proc=0x{0}, is_valid_source_block_proc=0x{1}",
+                                    blockSearch.get_block_proc.ToString("x08"), blockSearch.is_valid_source_block_proc.ToString("x08")));
+
+                                // Add the comment to the field.
+                                blockCodeCreator.CodeClass.Members[blockCodeCreator.CodeClass.Members.Count - 1].Comments.Add(new CodeCommentStatement(comment));
+                            }
+                            break;
+                        }
                     case field_type._field_block:
                         {
                             // Get the definition struct from the field address.
                             TagBlockDefinition tagBlockDefinition = reader.TagBlockDefinitions[fields[i].definition_address];
 
-                            // Check if the tag block definition already exists in the parent code scope.
-                            MutationCodeScope tagBlockScope = parentScope.FindExistingCodeScope(tagBlockDefinition.s_tag_block_definition.address);
-                            if (tagBlockScope == null)
-                            {
-                                // Create a new code scope for the tag block definition.
-                                tagBlockScope = parentScope.CreateCodeScopeForType(tagBlockDefinition.s_tag_block_definition.Name,
-                                    tagBlockDefinition.s_tag_block_definition.address, MutationCodeScopeType.TagBlock);
-
-                                // Compute the size of the definition.
-                                int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(reader, tagBlockDefinition.TagFields[tagBlockDefinition.GetFieldSetIndexClosestToH2Xbox()]);
-
-                                // Create a new class for the tag block definition.
-                                MutationCodeCreator childBlockCodeCreator = this.CodeCreator.CreateTagBlockClass(tagBlockScope.Namespace,
-                                    TagBlockDefinitionAttribute.CreateAttributeDeclaration(tagBlockDefinition, definitionSize));
-
-                                // Process the tag block definition.
-                                ProcessTagBlockDefinition(reader, tagBlockDefinition, childBlockCodeCreator, tagBlockScope, parentScope);
-                            }
+                            // Check if the tag block definition already exists in the parent code scope, if not process it.
+                            MutationCodeScope tagBlockScope = FindOrProcessTagBlock(reader, tagBlockDefinition.s_tag_block_definition.address, parentScope);
 
                             // Create a field for the tag block.
                             blockCodeCreator.AddTagBlockField(fieldName, tagBlockScope.Namespace, attributeCollection);
@@ -235,24 +280,8 @@ namespace LayoutViewer.CodeDOM
                             // Get the definition struct from the field address.
                             TagBlockDefinition tagBlockDefinition = reader.TagBlockDefinitions[tagStruct.block_definition_address];
 
-                            // Check if the tag block definition already exists in the parent code scope.
-                            MutationCodeScope tagBlockScope = parentScope.FindExistingCodeScope(tagBlockDefinition.s_tag_block_definition.address);
-                            if (tagBlockScope == null)
-                            {
-                                // Create a new code scope for the tag block definition.
-                                tagBlockScope = parentScope.CreateCodeScopeForType(tagBlockDefinition.s_tag_block_definition.Name,
-                                    tagBlockDefinition.s_tag_block_definition.address, MutationCodeScopeType.Struct);
-
-                                // Compute the size of the definition.
-                                int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(reader, tagBlockDefinition.TagFields[tagBlockDefinition.GetFieldSetIndexClosestToH2Xbox()]);
-
-                                // Create a new class for the tag block definition.
-                                MutationCodeCreator childBlockCodeCreator = this.CodeCreator.CreateTagBlockClass(tagBlockScope.Namespace,
-                                    TagBlockDefinitionAttribute.CreateAttributeDeclaration(tagBlockDefinition, definitionSize));
-
-                                // Process the tag block definition.
-                                ProcessTagBlockDefinition(reader, tagBlockDefinition, childBlockCodeCreator, tagBlockScope, parentScope);
-                            }
+                            // Check if the tag block definition already exists in the parent code scope, if not process it.
+                            MutationCodeScope tagBlockScope = FindOrProcessTagBlock(reader, tagBlockDefinition.s_tag_block_definition.address, parentScope);
 
                             // Build the tag block definition attribute for the field.
                             attributeCollection.Add(TagStructAttribute.CreateAttributeDeclaration());
@@ -290,7 +319,7 @@ namespace LayoutViewer.CodeDOM
                             explaination_definition explanation = (explaination_definition)fields[i];
 
                             // Create a field for the explanation block.
-                            blockCodeCreator.AddExplanationField(fieldName, explanation.Name, explanation.Explaination);
+                            blockCodeCreator.AddExplanationField(fieldName, explanation.Name, explanation.Explaination, attributeCollection);
                             break;
                         }
                     case field_type._field_array_start:
@@ -335,6 +364,81 @@ namespace LayoutViewer.CodeDOM
                         }
                 }
             }
+        }
+
+        /// <summary>
+        /// Searchs for the MutationCodeScope object for the specified tag block if one exists, or creates a new code scope if it does not.
+        /// </summary>
+        /// <param name="reader">Guerilla reader</param>
+        /// <param name="address">Block definition address</param>
+        /// <param name="parentScope">Parent code scope used if the block definition has not yet been processed</param>
+        /// <returns>Code scope object for the tag block definition</returns>
+        private MutationCodeScope FindOrProcessTagBlock(GuerillaReader reader, int address, MutationCodeScope parentScope)
+        {
+            // Get the tag block definition for this address.
+            TagBlockDefinition tagBlockDefinition = reader.TagBlockDefinitions[address];
+
+            // Check if the tag block definition already exists in the parent code scope.
+            MutationCodeScope tagBlockScope = parentScope.FindExistingCodeScope(tagBlockDefinition.s_tag_block_definition.address);
+            if (tagBlockScope == null)
+            {
+                // Create a new code scope for the tag block definition.
+                tagBlockScope = parentScope.CreateCodeScopeForType(tagBlockDefinition.s_tag_block_definition.Name,
+                    tagBlockDefinition.s_tag_block_definition.address, MutationCodeScopeType.Struct);
+
+                // Compute the size of the definition.
+                int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(reader, tagBlockDefinition.TagFields[tagBlockDefinition.GetFieldSetIndexClosestToH2Xbox()]);
+
+                // Create a new class for the tag block definition.
+                MutationCodeCreator childBlockCodeCreator = this.CodeCreator.CreateTagBlockClass(tagBlockScope.Namespace,
+                TagBlockDefinitionAttribute.CreateAttributeDeclaration(tagBlockDefinition, definitionSize, definitionSize));
+
+                // Process the tag block definition.
+                ProcessTagBlockDefinition(reader, tagBlockDefinition, childBlockCodeCreator, tagBlockScope, parentScope);
+            }
+            else
+            {
+                bool found = false;
+
+                // There is an edge case where some group tags are also used as tag block definitions. So make sure this
+                // tag block class has a TagBlockDefinitionAttribute and if not create one.
+                MutationCodeCreator blockCodeCreator = this.CodeCreator.ParentCodeCreator.ChildCodeCreators.FirstOrDefault(child => child.CodeClass != null && child.CodeClass.Name == tagBlockScope.Namespace);
+                if (blockCodeCreator == null)
+                {
+                    // We did not find the code class in the parent object, search our child object for the code class we are looking for.
+                    blockCodeCreator = this.CodeCreator.ChildCodeCreators.FirstOrDefault(child => child.CodeClass != null && child.CodeClass.Name == tagBlockScope.Namespace);
+                    if (blockCodeCreator == null)
+                    {
+                        // Did not find a code class for the specified namespace.
+                        throw new InvalidOperationException("Code class for namespace not found");
+                    }
+                }
+
+                // Loop through the custom attributes for the code class and search for the TagBlockDefinitionAttribute.
+                for (int i = 0; i < blockCodeCreator.CodeClass.CustomAttributes.Count; i++)
+                {
+                    // Check if this attribute type is a TagBlockDefinitionAttribute.
+                    if (blockCodeCreator.CodeClass.CustomAttributes[i].Name == typeof(TagBlockDefinitionAttribute).Name)
+                    {
+                        // Flag that we found the attribute and break the loop.
+                        found = true;
+                        break;
+                    }
+                }
+
+                // Check if we found the attribute and if not create one.
+                if (found == false)
+                {
+                    // Compute the size of the definition.
+                    int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(reader, tagBlockDefinition.TagFields[tagBlockDefinition.GetFieldSetIndexClosestToH2Xbox()]);
+
+                    // Add the TagBlockDefinitionAttribute to the block.
+                    blockCodeCreator.CodeClass.CustomAttributes.Add(TagBlockDefinitionAttribute.CreateAttributeDeclaration(tagBlockDefinition, definitionSize, definitionSize));
+                }
+            }
+
+            // Return the code scope for this block definition.
+            return tagBlockScope;
         }
 
         /// <summary>

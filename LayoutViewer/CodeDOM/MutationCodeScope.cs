@@ -31,6 +31,11 @@ namespace LayoutViewer.CodeDOM
         public string ParentNamespace { get; private set; }
 
         /// <summary>
+        /// Parent code scope instance if one exists.
+        /// </summary>
+        public MutationCodeScope ParentScope { get; private set; }
+
+        /// <summary>
         /// Type of code scope, ie namespace, class, struct, enum.
         /// </summary>
         public MutationCodeScopeType Type { get; private set; }
@@ -75,13 +80,15 @@ namespace LayoutViewer.CodeDOM
         /// </summary>
         /// <param name="@namespace">Full type name for the code scope</param>
         /// <param name="parentNamepace">Full type name of the parent type/namespace including the namespace</param>
+        /// <param name="parentScope">Parent code scope if a parent exists.</param>
         /// <param name="definitionAddress">Guerilla definition address that corresponds to this code scope</param>
         /// <param name="scopeType">Type of code scope</param>
-        public MutationCodeScope(string @namespace, string parentNamepace, int definitionAddress, MutationCodeScopeType scopeType)
+        public MutationCodeScope(string @namespace, string parentNamepace, MutationCodeScope parentScope, int definitionAddress, MutationCodeScopeType scopeType)
         {
             // Initialize fields.
             this.Namespace = @namespace;
             this.ParentNamespace = parentNamepace;
+            this.ParentScope = parentScope;
             this.DefinitionAddress = definitionAddress;
             this.Type = scopeType;
 
@@ -98,9 +105,10 @@ namespace LayoutViewer.CodeDOM
         /// <param name="displayName">The UI mark up display name for the field.</param>
         /// <param name="units">String to receive the units specifier is one is present</param>
         /// <param name="tooltip">String to receive the tooltip text if it is present</param>
+        /// <param name="color">String to receive the tag block color if it is present</param>
         /// <param name="markupFlags">The UI markup flags for this field.</param>
         /// <returns>The new code safe field name for the field</returns>
-        public string CreateCodeSafeFieldName(field_type fieldType, string fieldName, out string displayName, out string units, out string tooltip, out EditorMarkUpFlags markupFlags)
+        public string CreateCodeSafeFieldName(field_type fieldType, string fieldName, out string displayName, out string units, out string tooltip, out string color, out EditorMarkUpFlags markupFlags)
         {
             string newFieldName = "";
 
@@ -108,6 +116,7 @@ namespace LayoutViewer.CodeDOM
             displayName = string.Empty;
             units = string.Empty;
             tooltip = string.Empty;
+            color = string.Empty;
             markupFlags = EditorMarkUpFlags.None;
 
             // Check if the field is a padding field.
@@ -130,7 +139,7 @@ namespace LayoutViewer.CodeDOM
             }
 
             // Convert the field name to a code safe representation.
-            MutationCodeFormatter.ProcessFieldName(fieldName, out newFieldName, out displayName, out units, out tooltip, out markupFlags);
+            MutationCodeFormatter.ProcessFieldName(fieldName, out newFieldName, out displayName, out units, out tooltip, out color, out markupFlags);
             if (newFieldName == "")
             {
                 // Create a new no-name field name.
@@ -153,6 +162,13 @@ namespace LayoutViewer.CodeDOM
 
                 // Save the new field name.
                 newFieldName = tempFieldName;
+            }
+
+            // Make sure the field name is not the same as the type name.
+            if (newFieldName == this.Namespace)
+            {
+                // Append an underscore to make the names different.
+                newFieldName += "_";
             }
 
             // Add the new field name to the fields list.
@@ -206,18 +222,24 @@ namespace LayoutViewer.CodeDOM
         /// <returns>The code scope for the type.</returns>
         public MutationCodeScope CreateCodeScopeForType(string typeName, int definitionAddress, MutationCodeScopeType scopeType)
         {
-            // Check if there is an entry in the Types list with the same definition address.
-            MutationCodeScope codeScope = FindExistingCodeScope(definitionAddress);
-            if (codeScope != null)
+            MutationCodeScope codeScope = null;
+
+            // Check to see if the definition address is valid, if so try to find a code scope object with the same address.
+            if (definitionAddress != -1)
             {
-                // There is an existing code scope for this type so just return that.
-                return codeScope;
+                // Check if there is an entry in the Types list with the same definition address.
+                codeScope = FindExistingCodeScope(definitionAddress);
+                if (codeScope != null)
+                {
+                    // There is an existing code scope for this type so just return that.
+                    return codeScope;
+                }
             }
 
             // Create a code safe type name for the new type.
-            string newTypeName, displayName, units, tooltip;
+            string newTypeName, displayName, units, tooltip, color;
             EditorMarkUpFlags markupFlags;
-            MutationCodeFormatter.ProcessFieldName(typeName, out newTypeName, out displayName, out units, out tooltip, out markupFlags);
+            MutationCodeFormatter.ProcessFieldName(typeName, out newTypeName, out displayName, out units, out tooltip, out color, out markupFlags);
             if (newTypeName == "" || MutationCodeFormatter.IsValidFieldName(newTypeName) == false)
             {
                 // For now we will create a no name type for it, and I will create a preprocessing function later on.
@@ -248,17 +270,29 @@ namespace LayoutViewer.CodeDOM
                     // Append an integer to the type name to try and make it unique.
                     tempTypeName = string.Format("{0}{1}", newTypeName, uniqueInt++);
                 }
-                while (this.Types.Keys.Contains(tempTypeName) == true);
+                while (EnsureTypeNameIsUniqueForScope(tempTypeName) == false);
 
                 // Save the temp type name.
                 newTypeName = tempTypeName;
             }
 
-            // Create a new code scope for this type.
-            codeScope = new MutationCodeScope(newTypeName, this.Namespace, definitionAddress, scopeType);
+            // If this is a tag block add it to the parent sope.
+            if (this.ParentScope != null && (scopeType == MutationCodeScopeType.Struct || scopeType == MutationCodeScopeType.TagBlock))
+            {
+                // Create a new code scope for this type.
+                codeScope = new MutationCodeScope(newTypeName, this.ParentNamespace, this.ParentScope, definitionAddress, scopeType);
 
-            // Add the new type to the types dictionary.
-            this.Types.Add(newTypeName, codeScope);
+                // Add the new type to the types dictionary.
+                this.ParentScope.Types.Add(newTypeName, codeScope);
+            }
+            else
+            {
+                // Create a new code scope for this type.
+                codeScope = new MutationCodeScope(newTypeName, this.Namespace, this, definitionAddress, scopeType);
+
+                // Add the new type to the types dictionary.
+                this.Types.Add(newTypeName, codeScope);
+            }
 
             // Return the new code scope for the type.
             return codeScope;
@@ -278,8 +312,40 @@ namespace LayoutViewer.CodeDOM
                 return this.Types.Values.First(type => type.DefinitionAddress == definitionAddress);
             }
 
+            // No type with matching definition address in this scope, try searching the parent scope.
+            if (this.ParentScope != null)
+            {
+                // Search the parent namespace for the type.
+                return this.ParentScope.FindExistingCodeScope(definitionAddress);
+            }
+
             // No existing definition was found.
             return null;
+        }
+
+        /// <summary>
+        /// Ensures the specified type name is unique in the current code scope and any parent code scopes.
+        /// </summary>
+        /// <param name="typeName">Name of type</param>
+        /// <returns>True if the type name is unique throughout the current scope, false otherwise.</returns>
+        private bool EnsureTypeNameIsUniqueForScope(string typeName)
+        {
+            // Check if the type name exists in the types for this scope.
+            if (this.Types.Keys.Contains(typeName) == true)
+            {
+                // Type name is not unique.
+                return false;
+            }
+
+            // If the parent code scope exists expand the search upward.
+            if (this.ParentScope != null)
+            {
+                // See if the parent has this type name.
+                return this.ParentScope.EnsureTypeNameIsUniqueForScope(typeName);
+            }
+
+            // Type name appears to be unique.
+            return true;
         }
 
         /// <summary>
@@ -294,7 +360,7 @@ namespace LayoutViewer.CodeDOM
             do
             {
                 // Create a new field name for the padding field.
-                newFieldName = string.Format("padding{0}", this.paddingFieldCount++);
+                newFieldName = string.Format("_padding{0}", this.paddingFieldCount++);
             }
             while (this.Fields.Contains(newFieldName) == true);
 
@@ -317,7 +383,7 @@ namespace LayoutViewer.CodeDOM
             do
             {
                 // Create a new field name for the no name field.
-                newFieldName = string.Format("noNameField{0}", this.noNameFieldCount++);
+                newFieldName = string.Format("_noNameField{0}", this.noNameFieldCount++);
             }
             while (this.Fields.Contains(newFieldName) == true);
 
@@ -340,7 +406,7 @@ namespace LayoutViewer.CodeDOM
             do
             {
                 // Create a new field name for the explanation field.
-                newFieldName = string.Format("explanationField{0}", this.explanationFieldCount++);
+                newFieldName = string.Format("_explanationField{0}", this.explanationFieldCount++);
             }
             while (this.Fields.Contains(newFieldName) == true);
 

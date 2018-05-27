@@ -10,6 +10,8 @@ namespace Mutation.Halo.TagGroups.FieldTypes
     [GuerillaType(HEK.Common.field_type._field_explanation)]
     public class Explanation
     {
+        public const int kSizeOf = 0;
+
         /// <summary>
         /// Name of the explanation block.
         /// </summary>

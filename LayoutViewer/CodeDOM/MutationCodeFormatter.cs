@@ -32,9 +32,23 @@ namespace LayoutViewer.CodeDOM
         /// Declares the field the naming field for blocks in a tag_block field.
         /// </summary>
         public const char FieldNameBlockNameCharacter = '^';
+        /// <summary>
+        /// Unknown purpose, guerilla does not display this field.
+        /// </summary>
+        public const char FieldNameUnknown1Character = ')';
+        /// <summary>
+        /// Tag block color is represented by a 24-bit hex color code.
+        /// </summary>
+        public const char TagBlockColorCharacter = '|';
+        /// <summary>
+        /// Unknown purpose, guerilla does not display this field.
+        /// </summary>
+        public const char FieldNameUnknown3Character = '~';
+
+        // Note: There may be one more markup character: ` and @
 
         // List of generally invalid characters in field names.
-        private static readonly char[] InvalidCharacters = { ' ', '(', ')', '-', '^', '.', '@', '*', '!', '#', '$', '&', '=', '+', '<', '>', '/', '\'', ',', '[', ']' };
+        private static readonly char[] InvalidCharacters = { ' ', '(', ')', '-', '^', '.', '@', '*', '!', '#', '$', '&', '=', '+', '<', '>', '/', '\'', '|', ',', '[', ']', '?', '~', '`' };
 
         public static CodeTypeReference CreateShortCodeTypeReference(Type fieldType, string[] imports)
         {
@@ -78,52 +92,23 @@ namespace LayoutViewer.CodeDOM
         /// <param name="displayName">The UI mark up display name for the field.</param>
         /// <param name="units">The units associated with the field (UI markup data).</param>
         /// <param name="tooltip">The tooltip associated with the field (UI markup data).</param>
+        /// <param name="color">Color of the tag_block field (UI markup data).</param>
         /// <param name="markupFlags">The UI markup flags for this field.</param>
-        public static void ProcessFieldName(string fieldText, out string fieldName, out string displayName, out string units, out string tooltip, out EditorMarkUpFlags markupFlags)
+        public static void ProcessFieldName(string fieldText, out string fieldName, out string displayName, out string units, out string tooltip, out string color, out EditorMarkUpFlags markupFlags)
         {
             // Satisfy the compiler.
             fieldName = string.Empty;
             displayName = string.Empty;
             units = string.Empty;
             tooltip = string.Empty;
+            color = string.Empty;
             markupFlags = EditorMarkUpFlags.None;
 
-            // Split the string using the markup delimiters.
-            string[] pieces = fieldText.Split(new char[] { FieldNameUnitsCharacter, FieldNameToolTipCharacter });
-
-            // Create our indcies for splicing.
-            int lastIndex = fieldText.Length;
-            int unitsIndex = fieldText.IndexOf(FieldNameUnitsCharacter);
-            int toolTipIndex = fieldText.IndexOf(FieldNameToolTipCharacter);
-
-            // Check if the tooltip string exists.
-            if (toolTipIndex != -1)
-            {
-                // Determine which piece the tooltip string is.
-                tooltip = CreateCodeSafeStringLiteral(toolTipIndex > unitsIndex ? pieces[pieces.Length - 1] : pieces[pieces.Length - 2]);
-
-                // Set the last index so we can continue parsing.
-                if (toolTipIndex < lastIndex)
-                    lastIndex = toolTipIndex;
-            }
-
-            // Check if the units string exists.
-            if (unitsIndex != -1)
-            {
-                // Determine which piece the units string is.
-                units = CreateCodeSafeStringLiteral(unitsIndex > toolTipIndex ? pieces[pieces.Length - 1] : pieces[pieces.Length - 2]);
-
-                // Set the last index so we can continue parsing.
-                if (unitsIndex < lastIndex)
-                    lastIndex = unitsIndex;
-            }
-
-            // Split out the field name and sanitize it.
-            displayName = CreateCodeSafeStringLiteral(RemoveMarkupFromFieldName(pieces[0]));
-            fieldName = CreateCodeSafeFieldName(pieces[0]);
+            // Parse all markup data from the field name.
+            fieldName = ProcessFieldNameWithMarkup(fieldText, out displayName, out units, out tooltip, out color).ToLower();
 
             // Determine the markup flags based on the display name.
-            markupFlags = MarkupFlagsFromFieldName(pieces[0]);
+            markupFlags = MarkupFlagsFromFieldName(fieldText);
 
             // If the name ends with a safe character just remove it.
             if (fieldName.EndsWith("_") == true)
@@ -158,7 +143,7 @@ namespace LayoutViewer.CodeDOM
                 newFieldName = newFieldName.Insert(0, "_");
 
             // Return the newly formatted field name.
-            return newFieldName;
+            return newFieldName.ToLower();
         }
 
         /// <summary>
@@ -207,7 +192,7 @@ namespace LayoutViewer.CodeDOM
             }
 
             // Return the processed name
-            return name;
+            return name.ToLower();
         }
 
         /// <summary>
@@ -241,11 +226,18 @@ namespace LayoutViewer.CodeDOM
             // Check the field name for the read-only character.
             flags |= (fieldName.Contains(FieldNameReadOnlyCharacter) == true ? EditorMarkUpFlags.ReadOnly : EditorMarkUpFlags.None);
 
+            // Check the field name for the hidden character.
+            //flags |= (fieldName.StartsWith(FieldNameHiddenNameCharacter.ToString()) == true ? EditorMarkUpFlags.Hidden : EditorMarkUpFlags.None);
+
             // Check the field name for the advanced view character.
             flags |= (fieldName.Contains(FieldNameAdvancedCharacter) == true ? EditorMarkUpFlags.Advanced : EditorMarkUpFlags.None);
 
             // Check the field name for the block naming character.
             flags |= (fieldName.Contains(FieldNameBlockNameCharacter) == true ? EditorMarkUpFlags.BlockName : EditorMarkUpFlags.None);
+
+            // Check the field name for the unknown markup characters.
+            flags |= (fieldName.Contains(FieldNameUnknown1Character) == true ? EditorMarkUpFlags.Unknown1 : EditorMarkUpFlags.None);
+            flags |= (fieldName.Contains(FieldNameUnknown3Character) == true ? EditorMarkUpFlags.Unknown3 : EditorMarkUpFlags.None);
 
             // Return the markup flags.
             return flags;
@@ -262,7 +254,8 @@ namespace LayoutViewer.CodeDOM
 
             // Create a list of the Guerilla markup specifier characers.
             char[] MarkupCharacters = { FieldNameAdvancedCharacter, FieldNameBlockNameCharacter,
-                FieldNameReadOnlyCharacter, FieldNameToolTipCharacter, FieldNameUnitsCharacter };
+                FieldNameReadOnlyCharacter, FieldNameToolTipCharacter, FieldNameUnitsCharacter,
+                FieldNameUnknown1Character, TagBlockColorCharacter, FieldNameUnknown3Character };
 
             // Loop through the entire string and only copy non-markup characters.
             for (int i = 0; i < fieldName.Length; i++)
@@ -295,6 +288,58 @@ namespace LayoutViewer.CodeDOM
                 "YOUR MOM"
             };
             return !invalidNames.Any(x => value.Equals(x));
+        }
+
+        /// <summary>
+        /// Takes a field name with markup characters and extracts all meta data into individual strings.
+        /// </summary>
+        /// <param name="fieldText">Field name containing markup characters</param>
+        /// <param name="displayName">Output display name string</param>
+        /// <param name="units">Output field units string</param>
+        /// <param name="tooltip">Output tooltip string</param>
+        /// <param name="color">Output tag block color sttring</param>
+        /// <returns>The name of the field.</returns>
+        private static string ProcessFieldNameWithMarkup(string fieldText, out string displayName, out string units, out string tooltip, out string color)
+        {
+            // Satisfy the compiler.
+            displayName = string.Empty;
+            units = string.Empty;
+            tooltip = string.Empty;
+            color = string.Empty;
+
+            // Create a list of all the markup characters that will split the string.
+            char[] delimiters = new char[] { FieldNameUnitsCharacter, FieldNameToolTipCharacter, TagBlockColorCharacter };
+
+            // Split the string using the delimiter list.
+            string[] pieces = fieldText.Split(delimiters);
+
+            // Clean up the display name of any markup characters.
+            displayName = CreateCodeSafeStringLiteral(RemoveMarkupFromFieldName(pieces[0]));
+
+            // Loop through the entire string and filter the pieces accordingly.
+            int pieceIndex = 1;
+            for (int i = 0; i < fieldText.Length; i++)
+            {
+                // Check if the current character is a markup character.
+                if (fieldText[i] == FieldNameUnitsCharacter)
+                {
+                    // Set the field units string.
+                    units = CreateCodeSafeStringLiteral(pieces[pieceIndex++]);
+                }
+                else if (fieldText[i] == FieldNameToolTipCharacter)
+                {
+                    // Set the tooltip string.
+                    tooltip = CreateCodeSafeStringLiteral(pieces[pieceIndex++]);
+                }
+                else if (fieldText[i] == TagBlockColorCharacter)
+                {
+                    // Set the tag block color string.
+                    color = CreateCodeSafeStringLiteral(pieces[pieceIndex++]);
+                }
+            }
+
+            // Return the field name.
+            return CreateCodeSafeFieldName(pieces[0]);
         }
     }
 }

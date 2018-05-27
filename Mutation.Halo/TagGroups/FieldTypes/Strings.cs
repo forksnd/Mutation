@@ -231,7 +231,7 @@ namespace Mutation.Halo.TagGroups.FieldTypes
 
         public static implicit operator GroupTag(string value)
         {
-            // Implicit cast from a string to a tag struct.
+            // Implicit cast from a string to a group tag.
             return new GroupTag(value);
         }
 

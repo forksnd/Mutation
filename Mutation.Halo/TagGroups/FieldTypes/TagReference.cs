@@ -12,34 +12,54 @@ namespace Mutation.Halo.TagGroups.FieldTypes
 #warning TagReference not fully implemented
     [GuerillaType(field_type._field_tag_reference)]
     [StructLayout(LayoutKind.Sequential, Size = kSizeOf)]
-    public struct TagReference
+    public class TagReference
     {
         /// <summary>
         /// Size of the TagReference struct.
         /// </summary>
         public const int kSizeOf = 8;
 
-        public GroupTag groupTag;
-        public DatumIndex datum;
+        /// <summary>
+        /// Group tag of the referenced tag.
+        /// </summary>
+        public GroupTag GroupTag { get; set; }
 
         /// <summary>
-        /// Initializes a new TagReference object with a null reference.
+        /// Datum index of the referenced tag.
         /// </summary>
-        //public TagReference()
-        //{
-        //    this.groupTag = GroupTag.Null;
-        //    this.datum = DatumIndex.NONE;
-        //}
+        public datum_index Datum { get; set; }
+
+        /// <summary>
+        /// Gets the allowed group tag for the tag referenced.
+        /// </summary>
+        public GroupTag AllowedGroupTag
+        {
+            get
+            {
+                // Get the tag reference attribute on this field.
+                object[] attributes = this.GetType().GetCustomAttributes(typeof(TagReferenceAttribute), false);
+                return (attributes[0] as TagReferenceAttribute).GroupTag;
+            }
+        }
+
+        /// <summary>
+        /// Initializes a new TagReference object to a null reference.
+        /// </summary>
+        public TagReference()
+        {
+            this.GroupTag = GroupTag.Null;
+            this.Datum = datum_index.NONE;
+        }
 
         /// <summary>
         /// Initializes a new TagReference using the values provided.
         /// </summary>
         /// <param name="groupTag">Group tag of the tag being referenced.</param>
         /// <param name="datum">Datum index of the tag being referenced.</param>
-        public TagReference(GroupTag groupTag, DatumIndex datum)
+        public TagReference(GroupTag groupTag, datum_index datum)
         {
-            this.groupTag = groupTag;
-            this.datum = datum;
+            this.GroupTag = groupTag;
+            this.Datum = datum;
         }
     }
 }
