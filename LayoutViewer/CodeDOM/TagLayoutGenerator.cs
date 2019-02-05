@@ -78,6 +78,41 @@ namespace LayoutViewer.CodeDOM
             // Initialize our list of tag definitions to process with the tag groups from the guerilla reader.
             List<TagBlockDefinition> tagBlockDefinitions = new List<TagBlockDefinition>(reader.TagBlockDefinitions.Values.Where(block => block.IsTagGroup == true));
 
+            // Sort the tag block definition list in order of inherited dependencies.
+            tagBlockDefinitions.Sort((a, b) =>
+            {
+                // Get the tag_group objects for each tag block definition.
+                tag_group group_a = reader.TagGroups.First(tag => tag.definition_address == a.s_tag_block_definition.address);
+                tag_group group_b = reader.TagGroups.First(tag => tag.definition_address == b.s_tag_block_definition.address);
+
+                // Check for a and b having no parents.
+                if (group_a.ParentGroupTag == string.Empty && group_b.ParentGroupTag == string.Empty)
+                {
+                    // The tag groups are equal at a dependency level.
+                    return 0;
+                }
+                else if (group_a.ParentGroupTag != string.Empty && group_b.ParentGroupTag != string.Empty)
+                {
+                    // Check if a is a parent of b or vice versa.
+                    if (group_a.ParentGroupTag == group_b.GroupTag)
+                        return 1;
+                    else if (group_b.ParentGroupTag == group_a.GroupTag)
+                        return -1;
+                }
+
+                // Check for a < b.
+                if (group_a.ParentGroupTag == string.Empty && group_b.ParentGroupTag != string.Empty)
+                {
+                    // Tag group a has no parent and b does.
+                    return -1;
+                }
+                else
+                {
+                    // Tag group a has a parent and group b does not.
+                    return 1;
+                }
+            });
+
             // Loop through all of the non-unique tag blocks and add them to the list of definitions to be processed.
             foreach (TagBlockDefinition definition in reader.TagBlockDefinitions.Values)
             {
@@ -88,6 +123,10 @@ namespace LayoutViewer.CodeDOM
                     tagBlockDefinitions.Add(definition);
                 }
             }
+
+            // TODO: Sort the tagBlockDefinitions list by number of dependencies in ascending order. This will allow us to create the 
+            // MutationCodeCreator objects in the loops below without hitting an edge case of creating a layout that depends on another
+            // layout that has not yet been created.
 
             // Reverse all of the tag block definitions so when when fix the structure sizes we fix the struct sizes for the referenced
             // tag_block's first and void having to deal with complex search algorithms to find them later on.
@@ -115,8 +154,7 @@ namespace LayoutViewer.CodeDOM
             for (int i = 0; i < tagBlockDefinitions.Count; i++)
             {
                 // Create a new tag layout creator and have it create its code scope using the tag block definition.
-                MutationTagLayoutCreator layoutCreator = new MutationTagLayoutCreator(tagBlockDefinitions[i], globalCodeCreator);
-                layoutCreator.CreateCodeScope(this.globalCodeScope);
+                MutationTagLayoutCreator layoutCreator = new MutationTagLayoutCreator(reader, tagBlockDefinitions[i], this.globalCodeScope, globalCodeCreator);
 
                 // Add the layout creator to the list.
                 layoutCreators.Add(layoutCreator);

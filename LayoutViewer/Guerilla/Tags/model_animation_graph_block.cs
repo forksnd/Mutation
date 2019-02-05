@@ -53,9 +53,14 @@ namespace LayoutViewer.Guerilla.Tags
             // Compute the definition size.
             int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(null, RawDataBlockFields);
 
+            // Create the TagBlockDefinition attribute.
+            CodeAttributeDeclaration[] attributes =
+            {
+                TagBlockDefinitionAttribute.CreateAttributeDeclaration(definitionSize, definitionSize, 4, -1)
+            };
+
             // Create the code creator for the tag block.
-            MutationCodeCreator childBlockCodeCreator = layoutCreator.CodeCreator.CreateTagBlockClass(blockScope.Namespace,
-                TagBlockDefinitionAttribute.CreateAttributeDeclaration(definitionSize, definitionSize, 4, -1));
+            MutationCodeCreator childBlockCodeCreator = layoutCreator.CodeCreator.CreateTagBlockClass(blockScope.Namespace, attributes);
 
             // Process the tag block fields.
             layoutCreator.ProcessFields(RawDataBlockFields, null, childBlockCodeCreator, blockScope, layoutCreator.CodeScope);

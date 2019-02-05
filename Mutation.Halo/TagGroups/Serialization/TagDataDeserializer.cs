@@ -484,17 +484,17 @@ namespace Mutation.Halo.TagGroups.Serialization
                 throw new InvalidDataException("Block count for tag_block is greater than the max allowed!");
             }
 
-            //// If we are reading this from a cache map then verify the tag block address is valid.
-            //if (flags.HasFlag(SerializationFlags.FileType_CacheMap) == true)
-            //{
-            //    // Make sure the tag block address and size are within the bounds of the map stream.
-            //    if (tagBlock.Address != 0 && (tagBlock.Address < (reader.BaseStream as VirtualMemoryStream).BaseAddress || 
-            //        tagBlock.Address + (count * tagBlock.CacheFileSize) > (reader.BaseStream as VirtualMemoryStream).BaseAddress + reader.BaseStream.Length))
-            //    {
-            //        // Tag block address and size are out of the bounds of the map stream.
-            //        throw new InvalidDataException("Tag block address and size are out of bounds");
-            //    }
-            //}
+            // If we are reading this from a cache map then verify the tag block address is valid.
+            if (flags.HasFlag(SerializationFlags.FileType_CacheMap) == true)
+            {
+                // Make sure the tag block address and size are within the bounds of the map stream.
+                if (tagBlock.Address != 0 && (tagBlock.Address < (reader.BaseStream as VirtualMemoryStream).BaseAddress ||
+                    tagBlock.Address + (count * tagBlock.CacheFileSize) > (reader.BaseStream as VirtualMemoryStream).BaseAddress + reader.BaseStream.Length))
+                {
+                    // Tag block address and size are out of the bounds of the map stream.
+                    throw new InvalidDataException("Tag block address and size are out of bounds");
+                }
+            }
 
             // Check if there are any elements in the tag_block and if so read them.
             if (count > 0)

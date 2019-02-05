@@ -130,6 +130,8 @@ namespace Mutation.Halo.TagGroups.Serialization
             // Check if the value is complex or primitive.
             if (value.GetType().IsArray == true)
             {
+                // NOTE: value.GetType() will cause us to get the attributes on the class for the value type, and not the field declaration.
+
                 // Get the padding attribute from the field.
                 PaddingAttribute attribute = (PaddingAttribute)value.GetType().GetCustomAttributes(typeof(PaddingAttribute), false)[0];
 

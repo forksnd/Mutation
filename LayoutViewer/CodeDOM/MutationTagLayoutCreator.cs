@@ -39,29 +39,22 @@ namespace LayoutViewer.CodeDOM
         /// </summary>
         public MutationCodeCreator CodeCreator { get; set; }
 
-        public MutationTagLayoutCreator(TagBlockDefinition tagBlockDefinition, MutationCodeCreator parentCodeCreator)
+        public MutationTagLayoutCreator(GuerillaReader reader, TagBlockDefinition tagBlockDefinition, MutationCodeScope parentScope, MutationCodeCreator parentCodeCreator)
         {
             // Initialize fields.
             this.TagBlockDefinition = tagBlockDefinition;
-            this.CodeCreator = parentCodeCreator.CreateChildCodeCreator();
-        }
 
-        public void CreateCodeScope(MutationCodeScope parentScope)
-        {
             // Create a new code scope for this type.
-            this.CodeScope = parentScope.CreateCodeScopeForType(this.TagBlockDefinition.s_tag_block_definition.Name, 
+            this.CodeScope = parentScope.CreateCodeScopeForType(this.TagBlockDefinition.s_tag_block_definition.Name,
                 this.TagBlockDefinition.s_tag_block_definition.address,
                 (this.TagBlockDefinition.IsTagGroup == true ? MutationCodeScopeType.TagGroup : MutationCodeScopeType.TagBlock));
+
+            // Create the code creator for this layout.
+            this.CodeCreator = parentCodeCreator.CreateChildCodeCreator();
 
             // Set the type name and field name based on the code scope that was just created.
             this.FieldName = this.TagBlockDefinition.s_tag_block_definition.Name;
             this.TypeName = this.CodeScope.Namespace;
-        }
-
-        public void CreateTagLayout(GuerillaReader reader, MutationCodeScope parentScope)
-        {
-            // Our child code creator for the tag group/block.
-            MutationCodeCreator childCodeCreator = null;
 
             // Check if this tag block is a tag group.
             if (this.TagBlockDefinition.IsTagGroup == true)
@@ -71,6 +64,13 @@ namespace LayoutViewer.CodeDOM
 
                 // Compute the size of the definition.
                 int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(reader, tagGroup.Definition.TagFields[tagGroup.Definition.GetFieldSetIndexClosestToH2Xbox()]);
+
+                // Create the TagBlockDefinition and TagGroupDefinition attributes.
+                CodeAttributeDeclaration[] attributes =
+                {
+                    TagGroupDefinitionAttribute.CreateAttributeDeclaration(tagGroup, definitionSize),
+                    TagBlockDefinitionAttribute.CreateAttributeDeclaration(this.TagBlockDefinition, definitionSize)
+                };
 
                 // Check if the tag group has a parent tag group it inherits from.
                 if (tagGroup.ParentGroupTag != string.Empty)
@@ -82,13 +82,12 @@ namespace LayoutViewer.CodeDOM
                     MutationCodeScope parentTagScope = parentScope.Types.Values.First(scope => scope.DefinitionAddress == parentTagGroup.definition_address);
 
                     // Create a new tag group class.
-                    childCodeCreator = this.CodeCreator.CreateTagGroupClass(this.TypeName,
-                        TagGroupDefinitionAttribute.CreateAttributeDeclaration(tagGroup, definitionSize), parentTagScope.Namespace);
+                    this.CodeCreator.CreateTagGroupClass(this.TypeName, attributes, parentTagScope.Namespace);
                 }
                 else
                 {
                     // Create a new tag group class.
-                    childCodeCreator = this.CodeCreator.CreateTagGroupClass(this.TypeName, TagGroupDefinitionAttribute.CreateAttributeDeclaration(tagGroup, definitionSize));
+                    this.CodeCreator.CreateTagGroupClass(this.TypeName, attributes);
                 }
             }
             else
@@ -96,12 +95,21 @@ namespace LayoutViewer.CodeDOM
                 // Compute the size of the definition.
                 int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(reader, this.TagBlockDefinition.TagFields[this.TagBlockDefinition.GetFieldSetIndexClosestToH2Xbox()]);
 
-                // Create a new tag block class.
-                childCodeCreator = this.CodeCreator.CreateTagBlockClass(this.TypeName, TagBlockDefinitionAttribute.CreateAttributeDeclaration(this.TagBlockDefinition, definitionSize));
-            }
+                // Create the TagBlockDefinition attribute.
+                CodeAttributeDeclaration[] attributes =
+                {
+                    TagBlockDefinitionAttribute.CreateAttributeDeclaration(this.TagBlockDefinition, definitionSize)
+                };
 
+                // Create a new tag block class.
+                this.CodeCreator.CreateTagBlockClass(this.TypeName, attributes);
+            }
+        }
+
+        public void CreateTagLayout(GuerillaReader reader, MutationCodeScope parentScope)
+        {
             // Process the tag block definition.
-            ProcessTagBlockDefinition(reader, this.TagBlockDefinition, childCodeCreator, this.CodeScope, parentScope);
+            ProcessTagBlockDefinition(reader, this.TagBlockDefinition, this.CodeCreator.ChildCodeCreators[0], this.CodeScope, parentScope);
         }
 
         public void WriteToFile(string folder)
@@ -389,9 +397,14 @@ namespace LayoutViewer.CodeDOM
                 // Compute the size of the definition.
                 int definitionSize = TagLayoutValidator.ComputeMutationDefinitionSize(reader, tagBlockDefinition.TagFields[tagBlockDefinition.GetFieldSetIndexClosestToH2Xbox()]);
 
+                // Create the TagBlockDefinition attribute.
+                CodeAttributeDeclaration[] attributes =
+                {
+                    TagBlockDefinitionAttribute.CreateAttributeDeclaration(tagBlockDefinition, definitionSize, definitionSize)
+                };
+
                 // Create a new class for the tag block definition.
-                MutationCodeCreator childBlockCodeCreator = this.CodeCreator.CreateTagBlockClass(tagBlockScope.Namespace,
-                TagBlockDefinitionAttribute.CreateAttributeDeclaration(tagBlockDefinition, definitionSize, definitionSize));
+                MutationCodeCreator childBlockCodeCreator = this.CodeCreator.CreateTagBlockClass(tagBlockScope.Namespace, attributes);
 
                 // Process the tag block definition.
                 ProcessTagBlockDefinition(reader, tagBlockDefinition, childBlockCodeCreator, tagBlockScope, parentScope);
@@ -402,16 +415,11 @@ namespace LayoutViewer.CodeDOM
 
                 // There is an edge case where some group tags are also used as tag block definitions. So make sure this
                 // tag block class has a TagBlockDefinitionAttribute and if not create one.
-                MutationCodeCreator blockCodeCreator = this.CodeCreator.ParentCodeCreator.ChildCodeCreators.FirstOrDefault(child => child.CodeClass != null && child.CodeClass.Name == tagBlockScope.Namespace);
+                MutationCodeCreator blockCodeCreator = this.CodeCreator.FindExistingCodeCreator(tagBlockScope.Namespace);
                 if (blockCodeCreator == null)
                 {
-                    // We did not find the code class in the parent object, search our child object for the code class we are looking for.
-                    blockCodeCreator = this.CodeCreator.ChildCodeCreators.FirstOrDefault(child => child.CodeClass != null && child.CodeClass.Name == tagBlockScope.Namespace);
-                    if (blockCodeCreator == null)
-                    {
-                        // Did not find a code class for the specified namespace.
-                        throw new InvalidOperationException("Code class for namespace not found");
-                    }
+                    // Did not find a code class for the specified namespace.
+                    throw new InvalidOperationException("Code class for namespace not found");
                 }
 
                 // Loop through the custom attributes for the code class and search for the TagBlockDefinitionAttribute.

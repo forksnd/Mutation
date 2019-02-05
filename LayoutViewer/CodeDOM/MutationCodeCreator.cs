@@ -167,10 +167,10 @@ namespace LayoutViewer.CodeDOM
         /// Creates a new class for the tag group and returns a MutationCodeCreator who's root namespace is the new class.
         /// </summary>
         /// <param name="className">Name of the class definition.</param>
-        /// <param name="blockAttribute">Tag block definition attribute for the block.</param>
+        /// <param name="attributes">List of attributes to be added to the class.</param>
         /// <param name="baseType">Name of the base type if this class inherits another type.</param>
         /// <returns>A new MutationCodeCreator for the child namespace.</returns>
-        public MutationCodeCreator CreateTagGroupClass(string className, CodeAttributeDeclaration blockAttribute, string baseType = "")
+        public MutationCodeCreator CreateTagGroupClass(string className, CodeAttributeDeclaration[] attributes, string baseType = "")
         {
             // Create a new code creator instance.
             MutationCodeCreator codeCreator = new MutationCodeCreator();
@@ -191,7 +191,7 @@ namespace LayoutViewer.CodeDOM
             }
 
             // Add the block attribute to the class declaration.
-            codeCreator.CodeClass.CustomAttributes.Add(blockAttribute);
+            codeCreator.CodeClass.CustomAttributes.AddRange(attributes);
 
             // Add the new tag group class to our namespace.
             this.CodeNamespace.Types.Add(codeCreator.CodeClass);
@@ -204,18 +204,13 @@ namespace LayoutViewer.CodeDOM
         /// Creates a new class for the tag block and returns a MutationCodeCreator who's root namespace is the new class.
         /// </summary>
         /// <param name="blockName">Name of the block definition.</param>
-        /// <param name="blockAttribute">Tag block definition attribute for the block.</param>
+        /// <param name="attributes">List of attributes to be added to the class.</param>
         /// <returns>A new MutationCodeCreator for the child namespace.</returns>
-        public MutationCodeCreator CreateTagBlockClass(string blockName, CodeAttributeDeclaration attribute)
+        public MutationCodeCreator CreateTagBlockClass(string blockName, CodeAttributeDeclaration[] attributes)
         {
             // This method is here in case I decide to change the functionality of tag block definitions.
             // For now they are created the same as a tag group.
-            MutationCodeCreator codeCreator = CreateTagGroupClass(blockName, attribute);
-
-            if (blockName == "g_null_block")
-            {
-
-            }
+            MutationCodeCreator codeCreator = CreateTagGroupClass(blockName, attributes);
 
             // Add a region directive to the tag block.
             codeCreator.CodeClass.StartDirectives.Add(new CodeRegionDirective(CodeRegionMode.Start, blockName));
@@ -752,6 +747,31 @@ namespace LayoutViewer.CodeDOM
 
             // Dispose of the code provider.
             codeProvider.Dispose();
+        }
+
+        /// <summary>
+        /// Recursively searches for an existing code creator with the specified class name.
+        /// </summary>
+        /// <param name="className">Class name of the code creator to find.</param>
+        /// <returns>A MutationCodeCreator with the specified class name if one exists, or null otherwise.</returns>
+        public MutationCodeCreator FindExistingCodeCreator(string className)
+        {
+            // Check if any of our child code creators have a code class with the specified class name.
+            if (this.ChildCodeCreators.Count(creator => creator.CodeClass != null && creator.CodeClass.Name == className) > 0)
+            {
+                // Return the code creator with the specified class name.
+                return this.ChildCodeCreators.Single(creator => creator.CodeClass != null && creator.CodeClass.Name == className);
+            }
+
+            // Check if we have a parent code creator and if so recursively search for a code creator with the specified class name.
+            if (this.ParentCodeCreator != null)
+            {
+                // Recursively search for the code creator.
+                return this.ParentCodeCreator.FindExistingCodeCreator(className);
+            }
+
+            // A code creator with the specified class name was not found.
+            return null;
         }
 
         #region Caching Functions
